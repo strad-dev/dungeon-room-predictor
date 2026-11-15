@@ -241,4 +241,25 @@ class RulesTest {
 		boolean[] m = Predictor.mustLeadOnward(g);
 		assertFalse(m[g.idx(1, 4)] || m[g.idx(2, 4)]);
 	}
+
+	@Test
+	void boxedInUnknownForcesTheOtherToLeadOnward() {
+		// Like the screenshot: "?" at (1,5) boxed in by opened rooms and the edge; "?" at (3,4) next
+		// to blank cells above it. The boxed one reaches no blank cell, so (3,4) is the only way in.
+		MapGrid.Builder b = new MapGrid.Builder(Floor.M7);
+		for (int z = 0; z < 6; z++) for (int x = 0; x < 6; x++) {
+			boolean blank = z <= 3 && x >= 3; // a blank block top-right, reachable only from (3,4)
+			if (!blank) b.tile(x, z, Tile.NORMAL);
+		}
+		b.tile(0, 5, Tile.ENTRANCE).tile(1, 5, Tile.UNKNOWN).tile(3, 4, Tile.UNKNOWN);
+		b.east(0, 5, Link.DOOR).south(3, 4, Link.DOOR);
+		MapGrid g = b.build();
+		boolean[] m = Predictor.mustLeadOnward(g);
+		assertFalse(m[g.idx(1, 5)], "the boxed-in ? reaches nothing");
+		assertTrue(m[g.idx(3, 4)], "the other ? is the only way into the blank cells");
+		Prediction p = Predictor.predict(g, Model.seeded(), 5);
+		for (Label k : Label.ALL) if (k.isEndRoom()) assertEquals(0, p.labels[g.idx(3, 4)][k.ordinal()], 1e-12);
+		int boxed = p.roomOf[g.idx(1, 5)];
+		assertEquals(Shape.S1x1, p.roomShape[boxed]);
+	}
 }
