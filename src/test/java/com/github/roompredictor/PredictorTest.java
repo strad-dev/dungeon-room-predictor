@@ -95,6 +95,41 @@ class PredictorTest {
 	}
 
 	@Test
+	void decodesFloorsWithAnExtraPuzzleColumn() {
+		// F5 without side puzzles: Hypixel centres just the 5 normal columns (origin 16, not 6).
+		MapGrid g = new MapGrid.Builder(Floor.F5)
+			.tile(2, 5, Tile.ENTRANCE).tile(2, 4, Tile.NORMAL).tile(3, 4, Tile.NORMAL).tile(1, 4, Tile.UNKNOWN)
+			.south(2, 4, Link.DOOR).east(2, 4, Link.MERGED).east(1, 4, Link.DOOR)
+			.build();
+		byte[] colors = TestMaps.paint(g);
+		MapDecoder.Geometry geo = MapDecoder.geometry(colors, Floor.F5);
+		assertNotNull(geo, "the grid is found when only the 5 normal columns are centred");
+		assertEquals(16, geo.offsetX());
+		assertTrue(MapDecoder.decode(colors, Floor.F5, geo).sameAs(g));
+	}
+
+	@Test
+	void decodesM4AtEitherRoomSize() {
+		// M4 with a side puzzle: all 6 columns are centred. Room size 16 or 18 map pixels.
+		MapGrid g = new MapGrid.Builder(Floor.M4)
+			.tile(2, 4, Tile.ENTRANCE).tile(2, 3, Tile.NORMAL).tile(1, 3, Tile.NORMAL).tile(3, 3, Tile.UNKNOWN)
+			.south(2, 3, Link.DOOR).east(1, 3, Link.MERGED).east(2, 3, Link.DOOR)
+			.tile(5, 1, Tile.PUZZLE).tile(4, 1, Tile.NORMAL).east(4, 1, Link.DOOR)
+			.build();
+		for (int rs : new int[]{16, 18}) {
+			byte[] colors = TestMaps.paint(g, rs);
+			MapDecoder.Geometry geo = MapDecoder.geometry(colors, Floor.M4);
+			assertNotNull(geo, "room size " + rs);
+			assertEquals(rs, geo.roomSize());
+			MapGrid d = MapDecoder.decode(colors, Floor.M4, geo);
+			assertEquals(Tile.ENTRANCE, d.tile(d.idx(2, 4)), "room size " + rs);
+			assertEquals(Tile.UNKNOWN, d.tile(d.idx(3, 3)), "room size " + rs);
+			assertEquals(Tile.PUZZLE, d.tile(d.idx(5, 1)), "side puzzle, room size " + rs);
+			assertEquals((128 - (6 * (rs + 4) - 4)) / 2, geo.offsetX(), "6 columns centred, room size " + rs);
+		}
+	}
+
+	@Test
 	void encodeRoundTrip() {
 		MapGrid full = TestMaps.fullM7();
 		assertTrue(MapGrid.decode(Floor.M7, full.encode()).sameAs(full));

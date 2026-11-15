@@ -80,10 +80,19 @@ public final class TestMaps {
 
 	/** Paints a grid into map colours: 16px rooms, 4px gaps, grid centred, 6px wide doors. */
 	public static byte[] paint(MapGrid g) {
+		return paint(g, g.w == 6 || g.h == 6 ? 16 : 18);
+	}
+
+	/** Same, with an explicit room size in map pixels. */
+	public static byte[] paint(MapGrid g, int rs) {
 		byte[] c = new byte[128 * 128];
-		int rs = g.w == 6 || g.h == 6 ? 16 : 18;
 		int pitch = rs + 4;
-		int ox = (128 - (g.w * pitch - 4)) / 2;
+		// Hypixel centres the dungeon's actual width: the normal columns, plus the extra puzzle
+		// column (F4-F6/M4-M6) only if a side puzzle is there.
+		boolean sidePuzzles = false;
+		for (int i = 0; i < g.size(); i++) if (g.floor.isExtraColumn(g.x(i)) && g.tile(i) != Tile.EMPTY) sidePuzzles = true;
+		int cols = sidePuzzles ? g.w : g.floor.standardWidth;
+		int ox = (128 - (cols * pitch - 4)) / 2;
 		int oz = (128 - (g.h * pitch - 4)) / 2;
 		for (int i = 0; i < g.size(); i++) {
 			Tile t = g.tile(i);
@@ -112,7 +121,9 @@ public final class TestMaps {
 	}
 
 	private static void fill(byte[] c, int x, int z, int w, int h, byte v) {
-		for (int zz = z; zz < z + h; zz++) for (int xx = x; xx < x + w; xx++) c[zz * 128 + xx] = v;
+		// Clipped at the map edge (an extra puzzle column can run off the right side).
+		for (int zz = Math.max(0, z); zz < Math.min(128, z + h); zz++)
+			for (int xx = Math.max(0, x); xx < Math.min(128, x + w); xx++) c[zz * 128 + xx] = v;
 	}
 
 	/** Reveal order for the fixture: breadth-first from the Entrance, one room per 10 seconds. */

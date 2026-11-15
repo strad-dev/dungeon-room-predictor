@@ -46,17 +46,17 @@ public final class MapDecoder {
 		return null;
 	}
 
-	/** Grid origin along one axis: of the offsets that keep the grid on the map, the most centred. */
+	/**
+	 * Grid origin along one axis: the first room position at or after the map edge that lines up
+	 * with the Entrance, shifted one room in when the grid leaves that much space (small grids
+	 * are centred). On floors with an extra puzzle column the normal columns are centred and the
+	 * extra column runs off the right edge, so the grid may not fit on the map.
+	 */
 	private static Integer origin(int roomStart, int pitch, int count, int roomSize) {
 		int span = count * pitch - GAP;
-		int ideal = (SIZE - span) / 2;
-		Integer best = null;
-		for (int k = 0; k < count; k++) {
-			int o = roomStart - k * pitch;
-			if (o < 0 || o + span > SIZE) continue;
-			if (best == null || Math.abs(o - ideal) < Math.abs(best - ideal)) best = o;
-		}
-		return best;
+		int o = roomStart % pitch;
+		if (SIZE - span >= 2 * pitch) o += pitch;
+		return o;
 	}
 
 	public static MapGrid decode(byte[] colors, Floor floor, Geometry g) {
