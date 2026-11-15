@@ -28,13 +28,21 @@ public final class Predictor {
 	 * @param puzzlesFromTab total puzzle count from the tab list, or 0 if unknown
 	 */
 	public static Prediction predict(MapGrid g, Model model, int puzzlesFromTab) {
-		return predict(g, model, puzzlesFromTab, -1);
+		return predict(g, model, puzzlesFromTab, -1, -1);
 	}
 
 	/**
 	 * @param puzzlesUnknown puzzles the tab list still shows as "???" (undiscovered), or -1
 	 */
 	public static Prediction predict(MapGrid g, Model model, int puzzlesFromTab, int puzzlesUnknown) {
+		return predict(g, model, puzzlesFromTab, puzzlesUnknown, -1);
+	}
+
+	/**
+	 * @param sidePuzzles from the map's position (see {@link MapDecoder.Geometry#sidePuzzles}):
+	 *                    0 = the extra puzzle column is empty, 1 = it has at least one puzzle, -1 = unknown
+	 */
+	public static Prediction predict(MapGrid g, Model model, int puzzlesFromTab, int puzzlesUnknown, int sidePuzzles) {
 		long start = System.nanoTime();
 		Floor floor = g.floor;
 		int n = g.size();
@@ -98,6 +106,7 @@ public final class Predictor {
 				next[i] = Model.softmax(model.logits(f), masks[i]);
 			}
 			balance(next, cand, target, hard);
+			sidePuzzleRule(g, next, cand, sidePuzzles);
 			p = next;
 		}
 
@@ -128,7 +137,7 @@ public final class Predictor {
 			bloodP = 1;
 		}
 
-		double[][] wither = witherDoors(g, p, path, walk);
+		double[][] wither = witherDoors(g, p, path, walk, model);
 		Completion completion = complete(g, model, p, shapes, cand, target, rareAllowed);
 		completion = withDoors(g, completion, wither);
 		return new Prediction(g, p, shapes, footprints, completion, wither, feats, masks, bloodCell, bloodP, puzzleTarget, puzzlesFromTab > 0,
@@ -609,7 +618,8 @@ public final class Predictor {
 	 *
 	 * @return {east, south} per cell, indexed like {@link MapGrid} links
 	 */
-	static double[][] witherDoors(MapGrid g, double[][] p, Path path, int[] walk) {
+	static double[][] witherDoors(MapGrid g, double[][] p, Path path, int[] walk, Model model) {
+		int bracket = g.floor.bracket();
 		int n = g.size();
 		double[][] out = new double[2][n];
 		if (g.count(Tile.BLOOD) > 0) return out;
@@ -637,7 +647,7 @@ public final class Predictor {
 				double pb = p[b][Label.BLOOD.ordinal()];
 				if (pb < 0.02) continue;
 				int steps = fromFairyToStart + distStart[b];
-				double w = pb * Math.exp(-(steps - 4) * (steps - 4) / 2.0);
+				double w = pb * model.fairyBloodWeight(bracket, steps);
 				if (w <= 0) continue;
 				total += w;
 				addRoute(g, acc, fromStart, start, b, w, true);
@@ -654,15 +664,12 @@ public final class Predictor {
 				if (p[b] == null || b == f) continue;
 				double pb = p[b][Label.BLOOD.ordinal()];
 				if (pb < 0.02 || distFairy[b] < 0) continue;
-				int m = g.manhattan(f, b);
-				double mw = switch (m) {
-					case 2, 4 -> 1.0;
-					case 1, 3, 5 -> 0.3;
-					default -> 0;
-				};
-				if (mw == 0) continue;
-				double len = base + distStart[f] + 4;
-				double w = pf * pb * mw * Math.exp(-(len - 10.5) * (len - 10.5) / 8);
+				// How far Blood is past Fairy, and the whole route's length, both judged by this
+				// floor size's learned distances (F7/M7 starts from the known rules).
+				double mw = model.fairyBloodWeight(bracket, distFairy[b]);
+				if (mw <= 0) continue;
+				double len = base + distStart[f] + distFairy[b];
+				double w = pf * pb * mw * model.entranceBloodWeight(bracket, g.floor.cells(), len);
 				if (w <= 0) continue;
 				total += w;
 				// start -> f: every door but the last (the normal door into Fairy) is a wither door.
@@ -734,15 +741,16 @@ public final class Predictor {
 
 	static void addPathFeatures(Features f, MapGrid g, int i, Path path, int[] walk, int[] fairyWalk,
 								int[] roomEntr, int[] roomFairy) {
-		if (roomEntr[i] >= 0) f.oneHot(Features.ENTR_ROOM, 13, roomEntr[i]);
-		if (roomFairy != null && roomFairy[i] >= 0) f.oneHot(Features.FAIRY_ROOM, 7, roomFairy[i]);
+		int br = g.floor.bracket();
+		if (roomEntr[i] >= 0) f.oneHot(Features.d(br, Features.ENTR_ROOM), 13, roomEntr[i]);
+		if (roomFairy != null && roomFairy[i] >= 0) f.oneHot(Features.d(br, Features.FAIRY_ROOM), 7, roomFairy[i]);
 		if (i == path.frontier()) f.add(Features.PATH_FRONTIER, 1);
 		if (path.fairyCandidate()[i]) f.add(Features.FAIRY_CANDIDATE, 1);
-		if (fairyWalk != null && fairyWalk[i] >= 0) f.oneHot(Features.FAIRY_WALK, 7, fairyWalk[i]);
+		if (fairyWalk != null && fairyWalk[i] >= 0) f.oneHot(Features.d(br, Features.FAIRY_WALK), 7, fairyWalk[i]);
 		int fr = path.frontier();
 		if (fr >= 0 && walk[fr] >= 0) {
 			int est = i == fr ? walk[fr] : walk[fr] + g.manhattan(fr, i);
-			f.oneHot(Features.PATH_EST, 13, est);
+			f.oneHot(Features.d(br, Features.PATH_EST), 13, est);
 		}
 	}
 
@@ -765,12 +773,12 @@ public final class Predictor {
 		int edges = (x == 0 ? 1 : 0) + (z == 0 ? 1 : 0) + (x == g.floor.standardWidth - 1 ? 1 : 0) + (z == g.h - 1 ? 1 : 0);
 		if (edges >= 1) f.add(Features.EDGE, 1);
 		if (edges >= 2) f.add(Features.CORNER, 1);
-		if (entrance >= 0) f.oneHot(Features.ENTR_MAN, 13, g.manhattan(i, entrance));
-		if (walk[i] >= 0) f.oneHot(Features.ENTR_WALK, 13, walk[i]);
+		if (entrance >= 0) f.oneHot(Features.d(bracket, Features.ENTR_MAN), 13, g.manhattan(i, entrance));
+		if (walk[i] >= 0) f.oneHot(Features.d(bracket, Features.ENTR_WALK), 13, walk[i]);
 		else f.add(Features.WALK_UNKNOWN, 1);
 		if (fairyCell >= 0) {
 			f.add(Features.FAIRY_KNOWN, 1);
-			f.oneHot(Features.FAIRY_MAN, 7, g.manhattan(i, fairyCell));
+			f.oneHot(Features.d(bracket, Features.FAIRY_MAN), 7, g.manhattan(i, fairyCell));
 		}
 		if (prev != null) {
 			double[] softFairy = new double[Features.SOFT_BUCKETS];
@@ -787,8 +795,8 @@ public final class Predictor {
 				}
 			}
 			for (int b = 0; b < Features.SOFT_BUCKETS; b++) {
-				f.add(Features.SOFT_FAIRY + b, softFairy[b]);
-				f.add(Features.SOFT_BLOOD + b, softBlood[b]);
+				f.add(Features.d(bracket, Features.SOFT_FAIRY) + b, softFairy[b]);
+				f.add(Features.d(bracket, Features.SOFT_BLOOD) + b, softBlood[b]);
 			}
 			f.add(Features.SOFT_END_ADJ, endAdj);
 		}
@@ -802,6 +810,44 @@ public final class Predictor {
 	 * still missing, then renormalises each cell. Unconstrained labels (Normal, Rare, Empty) absorb
 	 * the remainder.
 	 */
+	/**
+	 * What the map's position says about the extra puzzle column: empty (every cell there is
+	 * Empty), or holding at least one puzzle (if none is open yet, the column's puzzle chances
+	 * are raised to add up to at least 1, taken from Empty).
+	 */
+	static void sidePuzzleRule(MapGrid g, double[][] p, boolean[] cand, int sidePuzzles) {
+		if (sidePuzzles < 0 || g.floor.standardWidth == g.floor.width) return;
+		int pz = Label.PUZZLE.ordinal(), em = Label.EMPTY.ordinal();
+		if (sidePuzzles == 0) {
+			for (int i = 0; i < p.length; i++) {
+				if (!cand[i] || !g.floor.isExtraColumn(g.x(i))) continue;
+				java.util.Arrays.fill(p[i], 0);
+				p[i][em] = 1;
+			}
+			return;
+		}
+		for (int i = 0; i < p.length; i++) {
+			if (g.floor.isExtraColumn(g.x(i)) && g.tile(i) == Tile.PUZZLE) return; // already seen one
+		}
+		double sum = 0;
+		int cells = 0;
+		for (int i = 0; i < p.length; i++) {
+			if (!cand[i] || !g.floor.isExtraColumn(g.x(i))) continue;
+			sum += p[i][pz];
+			cells++;
+		}
+		if (cells == 0 || sum >= 1) return;
+		for (int i = 0; i < p.length; i++) {
+			if (!cand[i] || !g.floor.isExtraColumn(g.x(i))) continue;
+			double want = sum > 1e-9 ? Math.min(1, p[i][pz] / sum) : 1.0 / cells;
+			p[i][em] = Math.max(0, p[i][em] - (want - p[i][pz]));
+			p[i][pz] = want;
+			double t = 0;
+			for (double v : p[i]) t += v;
+			for (int k = 0; k < p[i].length; k++) p[i][k] /= t;
+		}
+	}
+
 	static void balance(double[][] p, boolean[] cand, double[] target, boolean[] hard) {
 		for (int it = 0; it < BALANCE_ITERATIONS; it++) {
 			for (int k = 0; k < Label.COUNT; k++) {

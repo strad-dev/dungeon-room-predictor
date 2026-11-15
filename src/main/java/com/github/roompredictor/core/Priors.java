@@ -33,6 +33,10 @@ final class Priors {
 		double[] rare = m.weights[Label.RARE.ordinal()];
 		double[] empty = m.weights[Label.EMPTY.ordinal()];
 
+		// F7/M7 distance rules, copied into each floor size's block at the end.
+		double[] bloodD = new double[DIST_BLOCK];
+		double[] fairyD = new double[DIST_BLOCK];
+
 		normal[BIAS] = 2.0;
 		normal[WALLED + 3] = -0.8;
 		normal[OBS_DOORS + 2] = 0.5;
@@ -51,15 +55,15 @@ final class Priors {
 		blood[BIAS] = -0.8;
 		blood[BLOOD_DOOR] = 8.0;
 		double[] bloodEntrMan = {-4, -3, -2.5, -1.5, -0.8, -0.2, 0.3, 0.6, 0.8, 0.8, 0.7, 0.5, 0.3};
-		for (int i = 0; i < bloodEntrMan.length; i++) blood[ENTR_MAN + i] = bloodEntrMan[i];
+		for (int i = 0; i < bloodEntrMan.length; i++) bloodD[ENTR_MAN + i] = bloodEntrMan[i];
 		double[] bloodEntrWalk = {-4, -4, -4, -3.5, -3, -2.5, -2, -0.3, 0.3, 0.8, 1.5, 1.5, 0.8};
-		for (int i = 0; i < bloodEntrWalk.length; i++) blood[ENTR_WALK + i] = bloodEntrWalk[i];
+		for (int i = 0; i < bloodEntrWalk.length; i++) bloodD[ENTR_WALK + i] = bloodEntrWalk[i];
 		// Softened: if Hypixel counts whole rooms (see ENTR_ROOM), going through a 2x2 or L can
 		// break the 2-or-4 parity of the shortest walk.
 		double[] bloodFairyMan = {-6, -2, 1.0, -1.5, 1.5, -2, -3};
-		for (int i = 0; i < bloodFairyMan.length; i++) blood[FAIRY_MAN + i] = bloodFairyMan[i];
+		for (int i = 0; i < bloodFairyMan.length; i++) bloodD[FAIRY_MAN + i] = bloodFairyMan[i];
 		double[] bloodSoftFairy = {-1.5, 1.0, -1.0, 1.5, -0.5};
-		for (int i = 0; i < bloodSoftFairy.length; i++) blood[SOFT_FAIRY + i] = bloodSoftFairy[i];
+		for (int i = 0; i < bloodSoftFairy.length; i++) bloodD[SOFT_FAIRY + i] = bloodSoftFairy[i];
 
 		// Path rules: the next unopened path room (behind a wither door) has two doors and isn't
 		// Fairy, whose door in is a normal door. Before Fairy is found, the path continues into it
@@ -67,40 +71,50 @@ final class Priors {
 		normal[PATH_FRONTIER] = 1.0;
 		for (double[] end : new double[][]{puzzle, trap, yellow, rare}) end[PATH_FRONTIER] = -3.0;
 		double[] bloodFairyWalk = {-4, -3, -2, -1, 1.5, -0.5, -1};
-		for (int i = 0; i < bloodFairyWalk.length; i++) blood[FAIRY_WALK + i] = bloodFairyWalk[i];
+		for (int i = 0; i < bloodFairyWalk.length; i++) bloodD[FAIRY_WALK + i] = bloodFairyWalk[i];
 		double[] bloodPathEst = {-4, -4, -4, -4, -4, -3, -2, -0.5, 0.3, 0.8, 1.5, 1.5, 0.8};
-		for (int i = 0; i < bloodPathEst.length; i++) blood[PATH_EST + i] = bloodPathEst[i];
+		for (int i = 0; i < bloodPathEst.length; i++) bloodD[PATH_EST + i] = bloodPathEst[i];
 
 		// Whole-room "tiles between" (each room passed counts its full size): Entrance->Fairy 4-5,
 		// Fairy->Blood 3, Entrance->Blood 9-10.
 		double[] fairyEntrRoom = {-4, -3, -2, -0.5, 1.5, 1.5, 0, -1, -2, -3, -3, -3, -3};
-		for (int i = 0; i < fairyEntrRoom.length; i++) fairy[ENTR_ROOM + i] = fairyEntrRoom[i];
+		for (int i = 0; i < fairyEntrRoom.length; i++) fairyD[ENTR_ROOM + i] = fairyEntrRoom[i];
 		double[] bloodEntrRoom = {-4, -4, -4, -4, -3.5, -3, -2, -1, 0.5, 1.5, 1.5, 0.3, -0.5};
-		for (int i = 0; i < bloodEntrRoom.length; i++) blood[ENTR_ROOM + i] = bloodEntrRoom[i];
+		for (int i = 0; i < bloodEntrRoom.length; i++) bloodD[ENTR_ROOM + i] = bloodEntrRoom[i];
 		double[] bloodFairyRoom = {-5, -4, -2, 3.0, -1.5, -2.5, -3};
-		for (int i = 0; i < bloodFairyRoom.length; i++) blood[FAIRY_ROOM + i] = bloodFairyRoom[i];
+		for (int i = 0; i < bloodFairyRoom.length; i++) bloodD[FAIRY_ROOM + i] = bloodFairyRoom[i];
 
 		fairy[BIAS] = -0.6;
 		fairy[WITHER_DOOR] = -2.0;
 		fairy[PATH_FRONTIER] = -2.0;
 		fairy[FAIRY_CANDIDATE] = 3.5;
 		double[] fairyPathEst = {-4, -3, -2, -0.3, 0.2, 0.6, 1.0, 1.0, 0.5, -0.2, -0.8, -1.5, -2};
-		for (int i = 0; i < fairyPathEst.length; i++) fairy[PATH_EST + i] = fairyPathEst[i];
+		for (int i = 0; i < fairyPathEst.length; i++) fairyD[PATH_EST + i] = fairyPathEst[i];
 		fairy[WALLED + 3] = -1.0;
 		double[] fairyEntrMan = {-4, -1.5, -0.8, -0.2, 0.4, 0.7, 0.7, 0.5, 0.1, -0.4, -0.9, -1.4, -2};
-		for (int i = 0; i < fairyEntrMan.length; i++) fairy[ENTR_MAN + i] = fairyEntrMan[i];
+		for (int i = 0; i < fairyEntrMan.length; i++) fairyD[ENTR_MAN + i] = fairyEntrMan[i];
 		double[] fairyEntrWalk = {-4, -2.5, -1.5, -0.3, 0.2, 0.6, 1.0, 1.0, 0.5, -0.2, -0.8, -1.5, -2};
-		for (int i = 0; i < fairyEntrWalk.length; i++) fairy[ENTR_WALK + i] = fairyEntrWalk[i];
+		for (int i = 0; i < fairyEntrWalk.length; i++) fairyD[ENTR_WALK + i] = fairyEntrWalk[i];
 		double[] fairySoftBlood = {-1.5, 1.0, -1.0, 1.5, -0.5};
-		for (int i = 0; i < fairySoftBlood.length; i++) fairy[SOFT_BLOOD + i] = fairySoftBlood[i];
+		for (int i = 0; i < fairySoftBlood.length; i++) fairyD[SOFT_BLOOD + i] = fairySoftBlood[i];
 
 		// Shortest-walk distances count a 2x2 shortcut as 2 tiles where Hypixel seems to count 4, so
 		// trust them half as much as the whole-room ones; learning sorts out which is right.
 		for (int i = 0; i < 13; i++) {
-			blood[ENTR_WALK + i] *= 0.5;
-			fairy[ENTR_WALK + i] *= 0.5;
-			blood[PATH_EST + i] *= 0.5;
-			fairy[PATH_EST + i] *= 0.5;
+			bloodD[ENTR_WALK + i] *= 0.5;
+			fairyD[ENTR_WALK + i] *= 0.5;
+			bloodD[PATH_EST + i] *= 0.5;
+			fairyD[PATH_EST + i] *= 0.5;
+		}
+		// The distance rules above are for F7/M7. Smaller dungeons have their own distances, which
+		// they learn from their own runs; they start from a weak (0.3x) copy that keeps the
+		// near-universal parts (e.g. Blood is never next to the Entrance).
+		for (int b = 0; b < Floor.BRACKETS; b++) {
+			double scale = b == 5 ? 1.0 : 0.3;
+			for (int k = 0; k < DIST_BLOCK; k++) {
+				blood[d(b, k)] = bloodD[k] * scale;
+				fairy[d(b, k)] = fairyD[k] * scale;
+			}
 		}
 
 		// Extra puzzle column: mostly empty, sometimes a puzzle.

@@ -130,6 +130,34 @@ class PredictorTest {
 	}
 
 	@Test
+	void fullyOpenedMapKeepsUpdating(@TempDir Path dir) throws Exception {
+		PredictorService s = new PredictorService(new Storage(dir), m -> {});
+		MapGrid full = TestMaps.fullM7();
+		int[] reveal = TestMaps.revealOrder(full);
+		long t = 1000;
+		for (int step : Replay.steps(reveal)) {
+			s.submit(new PredictorService.Observation(3, t += 1000, Floor.M7, TestMaps.paint(Replay.at(full, reveal, step)), 5, -1, null, 3, 5, 0));
+			barrier(s);
+		}
+		assertTrue(s.liveGrid().sameAs(full), "fully opened map shown");
+		// A room gets cleared after everything is open: the overlay must still pick it up.
+		MapGrid.Builder b = new MapGrid.Builder(Floor.M7);
+		for (int i = 0; i < full.size(); i++) {
+			b.tile(full.x(i), full.z(i), full.tile(i));
+			b.east(full.x(i), full.z(i), full.link(i, 1));
+			b.south(full.x(i), full.z(i), full.link(i, 2));
+		}
+		b.check(3, 4, Check.WHITE);
+		MapGrid cleared = b.build();
+		s.submit(new PredictorService.Observation(3, t += 1000, Floor.M7, TestMaps.paint(cleared), 5, -1, null, 3, 5, 0));
+		barrier(s);
+		assertEquals(Check.WHITE, s.liveGrid().check(s.liveGrid().idx(3, 4)), "a new checkmark on a full map still shows");
+		assertNotNull(s.latest(), "and the prediction pass still ran");
+		assertNull(s.lastError(), s.lastError());
+		s.shutdown();
+	}
+
+	@Test
 	void encodeRoundTrip() {
 		MapGrid full = TestMaps.fullM7();
 		assertTrue(MapGrid.decode(Floor.M7, full.encode()).sameAs(full));

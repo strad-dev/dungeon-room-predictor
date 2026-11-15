@@ -28,6 +28,8 @@ public final class RunRecord {
 	/** Facing when joining (0 N .. 3 W) and the side the Entrance door turned out to be on, or -1. */
 	public int spawnDir = -1;
 	public int entranceDoor = -1;
+	/** From the map's position: 0 no side puzzles, 1 at least one, -1 unknown / no extra column. */
+	public int sidePuzzles = -1;
 
 	public Floor floor() {
 		return Floor.parse(floor);

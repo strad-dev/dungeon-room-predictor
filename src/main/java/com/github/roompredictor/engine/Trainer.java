@@ -47,7 +47,7 @@ public final class Trainer {
 
 		int updates = 0;
 		for (int t : Replay.steps(r.reveal)) {
-			Prediction p = Predictor.predict(prev, m, r.puzzles);
+			Prediction p = Predictor.predict(prev, m, r.puzzles, -1, r.sidePuzzles);
 			for (int i = 0; i < fin.size(); i++) {
 				if (r.reveal[i] != t || p.features[i] == null) continue;
 				Label label = labelFor(fin, i, r.puzzles);
@@ -70,6 +70,13 @@ public final class Trainer {
 			m.recordBigRooms(floor.bracket(), rooms, tiles);
 		}
 		if (r.puzzles > 0) m.recordPuzzles(floor, r.puzzles);
+		// This floor size's distances, from any map where the rooms were opened.
+		int e = fin.entrance(), f = fin.find(Tile.FAIRY), b = fin.find(Tile.BLOOD);
+		if (b >= 0) {
+			int fb = f >= 0 ? fin.walkDistances(f)[b] : -1;
+			int eb = e >= 0 ? fin.walkDistances(e)[b] : -1;
+			m.recordDistances(floor.bracket(), fb, eb);
+		}
 		return updates;
 	}
 }

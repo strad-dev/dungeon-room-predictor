@@ -99,6 +99,11 @@ public final class TestMaps {
 			if (t == Tile.EMPTY) continue;
 			int x0 = ox + g.x(i) * pitch, z0 = oz + g.z(i) * pitch;
 			fill(c, x0, z0, rs, rs, color(t));
+			Check ck = g.check(i);
+			if (ck != Check.NONE) {
+				byte cc = ck == Check.GREEN ? 30 : ck == Check.WHITE ? 34 : (byte) 18;
+				fill(c, x0 + rs / 2 - 2, z0 + rs / 2 - 2, 4, 4, cc);
+			}
 			for (int d = 1; d <= 2; d++) {
 				Link l = g.link(i, d);
 				if (l == Link.NONE) continue;

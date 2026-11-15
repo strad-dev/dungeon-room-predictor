@@ -14,6 +14,21 @@ public final class MapDecoder {
 
 	/** Pixel geometry, found once per run from the Entrance square. */
 	public record Geometry(int roomSize, int offsetX, int offsetZ) {
+		/**
+		 * On floors with an extra puzzle column, the map centres the dungeon's actual width:
+		 * 5 columns if there are no side puzzles, 6 if there's at least one. Returns 0 (none),
+		 * 1 (at least one), or -1 (no extra column on this floor, or the position matches neither).
+		 */
+		public int sidePuzzles(Floor floor) {
+			if (floor.standardWidth == floor.width) return -1;
+			int p = pitch();
+			int five = (SIZE - (floor.standardWidth * p - GAP)) / 2;
+			int six = (SIZE - (floor.width * p - GAP)) / 2;
+			if (Math.abs(offsetX - five) <= 1) return 0;
+			if (Math.abs(offsetX - six) <= 1) return 1;
+			return -1;
+		}
+
 		public int pitch() {
 			return roomSize + GAP;
 		}

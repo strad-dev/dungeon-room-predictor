@@ -87,6 +87,8 @@ public final class PredictorService {
 	private double bloodGuessP;
 	private int puzzles;
 	private int puzzlesUnknown = -1;
+	/** From the map's position on floors with an extra puzzle column; see MapDecoder.Geometry#sidePuzzles. */
+	private int sidePuzzles = -1;
 	private String[] names;
 	/** Spawn cell and facing (0 N .. 3 W) when the player joined this dungeon, or -1. */
 	private int spawnX = -1, spawnZ = -1, spawnDir = -1;
@@ -390,22 +392,35 @@ public final class PredictorService {
 	 * Hypixel counts.
 	 */
 	private void distanceReport(Consumer<String> out) {
-		List<int[]> ef = new ArrayList<>(), fb = new ArrayList<>(), eb = new ArrayList<>();
+		String[] names = {"E", "F1/M1", "F2-3/M2-3", "F4/M4", "F5-6/M5-6", "F7/M7"};
+		List<List<int[]>> ef = new ArrayList<>(), fb = new ArrayList<>(), eb = new ArrayList<>();
+		for (int k = 0; k < Floor.BRACKETS; k++) {
+			ef.add(new ArrayList<>());
+			fb.add(new ArrayList<>());
+			eb.add(new ArrayList<>());
+		}
 		for (RunRecord r : runs) {
 			MapGrid g = r.grid();
 			if (g == null) continue;
 			int e = g.entrance(), f = g.find(Tile.FAIRY), b = g.find(Tile.BLOOD);
 			if (e < 0 || f < 0 || b < 0) continue;
+			int k = g.floor.bracket();
 			int[] we = g.walkDistances(e), wf = g.walkDistances(f), re = g.roomBetween(e), rf = g.roomBetween(f);
-			if (we[f] > 0 && re[f] >= 0) ef.add(new int[]{we[f] - 1, re[f]});
-			if (wf[b] > 0 && rf[b] >= 0) fb.add(new int[]{wf[b] - 1, rf[b]});
-			if (we[b] > 0 && re[b] >= 0) eb.add(new int[]{we[b] - 1, re[b]});
+			if (we[f] > 0 && re[f] >= 0) ef.get(k).add(new int[]{we[f] - 1, re[f]});
+			if (wf[b] > 0 && rf[b] >= 0) fb.get(k).add(new int[]{wf[b] - 1, rf[b]});
+			if (we[b] > 0 && re[b] >= 0) eb.get(k).add(new int[]{we[b] - 1, re[b]});
 		}
-		if (ef.isEmpty() && fb.isEmpty()) return;
-		out.accept("Tiles between (shortest walk | whole rooms), from stored maps:");
-		report(out, "  Entrance-Fairy", ef);
-		report(out, "  Fairy-Blood", fb);
-		report(out, "  Entrance-Blood", eb);
+		boolean header = false;
+		for (int k = 0; k < Floor.BRACKETS; k++) {
+			if (ef.get(k).isEmpty() && fb.get(k).isEmpty()) continue;
+			if (!header) {
+				out.accept("Tiles between (shortest walk | whole rooms), from stored maps:");
+				header = true;
+			}
+			report(out, "  " + names[k] + " Entrance-Fairy", ef.get(k));
+			report(out, "  " + names[k] + " Fairy-Blood", fb.get(k));
+			report(out, "  " + names[k] + " Entrance-Blood", eb.get(k));
+		}
 	}
 
 	private static void report(Consumer<String> out, String label, List<int[]> v) {
@@ -507,6 +522,11 @@ public final class PredictorService {
 			if (geometry != null) {
 				MapGrid next = MapDecoder.decode(lastColors, floor, geometry);
 				MapGrid raw = next; // exactly what the map item shows, for drawing
+				if (gridFromMap && unopensRooms(grid, next)) {
+					// The dungeon map only ever gains information; this must be some other map.
+					status = "ignored a map that doesn't match this run's map";
+					return;
+				}
 				if (!gridFromMap) grid = null; // the spawn guess isn't something the map revealed
 				next = next.rememberDoors(grid); // opened wither/blood doors stay wither/blood doors
 				if (!next.sameAs(grid)) {
@@ -536,6 +556,18 @@ public final class PredictorService {
 		}
 	}
 
+	/**
+	 * True if {@code next} shows several cells opened in {@code prev} as unopened, which can't happen
+	 * on the same map (it only gains information), so it's some other map. A single odd tile
+	 * (e.g. a colour the decoder doesn't know) isn't enough, so that can never freeze updates.
+	 */
+	static boolean unopensRooms(MapGrid prev, MapGrid next) {
+		if (prev == null || prev.floor != next.floor) return false;
+		int lost = 0;
+		for (int i = 0; i < prev.size(); i++) if (prev.tile(i).explored() && !next.tile(i).explored()) lost++;
+		return lost >= 3;
+	}
+
 	private void startRun(Observation o) {
 		runId = o.runId();
 		finished = null;
@@ -555,6 +587,7 @@ public final class PredictorService {
 		trained = null;
 		reveal = null;
 		spawnX = spawnZ = spawnDir = -1;
+		sidePuzzles = -1;
 		gridFromMap = false;
 	}
 
@@ -591,7 +624,10 @@ public final class PredictorService {
 	private void repredict() {
 		if (floor == null || grid == null || model == null) return;
 		long t0 = System.nanoTime();
-		prediction = Predictor.predict(grid, model, puzzles, puzzlesUnknown);
+		MapDecoder.Geometry geo = geometry;
+		int side = geo == null ? -1 : geo.sidePuzzles(floor);
+		prediction = Predictor.predict(grid, model, puzzles, puzzlesUnknown, side);
+		sidePuzzles = side;
 		lastPredictMs = (System.nanoTime() - t0) / 1_000_000;
 		if (!gridFromMap) liveGrid = grid; // the spawn guess, until the map item arrives
 		predictedAtUpdates = model.updates;
@@ -628,6 +664,7 @@ public final class PredictorService {
 		r.bloodActual = grid.find(Tile.BLOOD);
 		if (names != null && names.length == grid.size()) r.names = names.clone();
 		r.spawnDir = spawnDir;
+		r.sidePuzzles = sidePuzzles;
 		r.entranceDoor = gridFromMap ? grid.entranceDoorDir() : -1;
 		r.seconds = Math.max(0, (System.currentTimeMillis() - runStartMs) / 1000);
 		storage.appendRun(r);
@@ -658,6 +695,7 @@ public final class PredictorService {
 		bloodGuess = -1;
 		names = null;
 		spawnX = spawnZ = spawnDir = -1;
+		sidePuzzles = -1;
 		gridFromMap = false;
 	}
 }

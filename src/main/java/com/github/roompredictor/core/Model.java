@@ -10,7 +10,7 @@ import java.util.Arrays;
  */
 public final class Model {
 	/** Bump when the feature layout changes; older model files are then reseeded, not misread. */
-	public static final int VERSION = 4;
+	public static final int VERSION = 5;
 
 	public double[][] weights = new double[Label.COUNT][Features.DIM];
 	public double[][] gradSq = new double[Label.COUNT][Features.DIM];
@@ -29,7 +29,59 @@ public final class Model {
 	public int[] bigRuns = new int[Floor.BRACKETS];
 	public int[] bigRoomMax = new int[Floor.BRACKETS];
 	public int[] bigTileMax = new int[Floor.BRACKETS];
+	/** Walking steps Fairy->Blood seen per bracket (counts 0..12+), and Entrance->Blood (sum, sum of squares, n). */
+	public double[][] fairyBloodSteps = new double[Floor.BRACKETS][13];
+	public double[] entranceBloodSum = new double[Floor.BRACKETS];
+	public double[] entranceBloodSq = new double[Floor.BRACKETS];
+	public int[] entranceBloodN = new int[Floor.BRACKETS];
 	public int version = VERSION;
+
+	public void recordDistances(int bracket, int fairyToBlood, int entranceToBlood) {
+		if (fairyToBlood >= 0) fairyBloodSteps[bracket][Math.min(12, fairyToBlood)]++;
+		if (entranceToBlood >= 0) {
+			entranceBloodSum[bracket] += entranceToBlood;
+			entranceBloodSq[bracket] += (double) entranceToBlood * entranceToBlood;
+			entranceBloodN[bracket]++;
+		}
+	}
+
+	/**
+	 * How plausible it is that Blood is {@code steps} walking steps past Fairy, 0..1. Learned per
+	 * floor size once there are 3 examples; before that F7/M7 uses the known rule (4 steps) and
+	 * smaller floors accept 2-8 steps.
+	 */
+	public double fairyBloodWeight(int bracket, int steps) {
+		double[] h = fairyBloodSteps[bracket];
+		double n = 0, max = 0;
+		for (double v : h) {
+			n += v;
+			max = Math.max(max, v);
+		}
+		if (n >= 3) return (h[Math.min(12, Math.max(0, steps))] + 0.25) / (max + 0.25);
+		if (bracket == 5) return steps == 4 ? 1.0 : 0.1;
+		return steps >= 2 && steps <= 8 ? 1.0 : 0.15;
+	}
+
+	/**
+	 * How plausible a total Entrance->Blood route of {@code steps} is, 0..1 (a bell curve). Learned
+	 * per floor size once there are 3 examples; before that F7/M7 centres on 9.5 steps and smaller
+	 * floors scale that by grid size.
+	 */
+	public double entranceBloodWeight(int bracket, int cells, double steps) {
+		double mean, sd;
+		if (entranceBloodN[bracket] >= 3) {
+			mean = entranceBloodSum[bracket] / entranceBloodN[bracket];
+			double var = entranceBloodSq[bracket] / entranceBloodN[bracket] - mean * mean;
+			sd = Math.max(1.0, Math.sqrt(Math.max(0, var)));
+		} else if (bracket == 5) {
+			mean = 9.5;
+			sd = 1.5;
+		} else {
+			mean = 9.5 * Math.sqrt(cells / 36.0);
+			sd = 3;
+		}
+		return Math.exp(-(steps - mean) * (steps - mean) / (2 * sd * sd));
+	}
 
 	/** Known F7/M7 rule: at most 7 big rooms covering at most 24 tiles, usually 22. */
 	public static final int F7_BIG_ROOMS = 7, F7_BIG_TILES_MAX = 24, F7_BIG_TILES_USUAL = 22;
@@ -153,6 +205,10 @@ public final class Model {
 		m.bigRuns = bigRuns.clone();
 		m.bigRoomMax = bigRoomMax.clone();
 		m.bigTileMax = bigTileMax.clone();
+		m.fairyBloodSteps = deep(fairyBloodSteps);
+		m.entranceBloodSum = entranceBloodSum.clone();
+		m.entranceBloodSq = entranceBloodSq.clone();
+		m.entranceBloodN = entranceBloodN.clone();
 		return m;
 	}
 
@@ -185,6 +241,10 @@ public final class Model {
 		if (bigRuns == null || bigRuns.length != Floor.BRACKETS) bigRuns = new int[Floor.BRACKETS];
 		if (bigRoomMax == null || bigRoomMax.length != Floor.BRACKETS) bigRoomMax = new int[Floor.BRACKETS];
 		if (bigTileMax == null || bigTileMax.length != Floor.BRACKETS) bigTileMax = new int[Floor.BRACKETS];
+		fairyBloodSteps = fit(fairyBloodSteps, Floor.BRACKETS, 13);
+		if (entranceBloodSum == null || entranceBloodSum.length != Floor.BRACKETS) entranceBloodSum = new double[Floor.BRACKETS];
+		if (entranceBloodSq == null || entranceBloodSq.length != Floor.BRACKETS) entranceBloodSq = new double[Floor.BRACKETS];
+		if (entranceBloodN == null || entranceBloodN.length != Floor.BRACKETS) entranceBloodN = new int[Floor.BRACKETS];
 		if (!(learningRate > 0) || learningRate > 5) learningRate = 0.15;
 		if (!(l2 >= 0)) l2 = 1e-4;
 	}

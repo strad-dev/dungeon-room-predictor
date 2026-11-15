@@ -61,6 +61,8 @@ public final class DungeonWatcher {
 	private byte[] lastSent;
 	/** The dungeon map's id, remembered for when the item isn't in slot 9. */
 	private MapId lastMapId;
+	/** The run's dungeon map, fixed once it has been decoded; other maps in slot 9 are ignored. */
+	private MapId lockedMapId;
 	private boolean mapItemSeen;
 	private List<String> lastSidebar = List.of();
 	/** Teammate markers from the map item: {mapPixelX, mapPixelZ, yawDegrees}. */
@@ -132,6 +134,7 @@ public final class DungeonWatcher {
 			inBoss = false;
 			lastSent = null;
 			lastMapId = null;
+			lockedMapId = null;
 			mapItemSeen = false;
 			teammates = List.of();
 			party = List.of();
@@ -178,14 +181,17 @@ public final class DungeonWatcher {
 		byte[] colors = null;
 		ItemStack stack = mc.player.getInventory().getItem(MAP_SLOT);
 		MapItemSavedData data = null;
-		if (stack.getItem() instanceof MapItem) {
-			data = MapItem.getSavedData(stack, level);
-			MapId id = stack.get(DataComponents.MAP_ID);
-			if (id != null) lastMapId = id;
-		} else if (lastMapId != null) {
+		MapId held = stack.getItem() instanceof MapItem ? stack.get(DataComponents.MAP_ID) : null;
+		// Once the run's map has been decoded, stick to it: dying swaps the hotbar, and another map
+		// item in slot 9 must not replace the dungeon map.
+		if (lockedMapId == null && lastMapId != null && service.geometry() != null) lockedMapId = lastMapId;
+		if (held != null && (lockedMapId == null || held.equals(lockedMapId))) {
+			data = MapItem.getSavedData(held, level);
+			lastMapId = held;
+		} else if (lockedMapId != null || lastMapId != null) {
 			// Hypixel sometimes takes the map out of slot 9 for a while. The client still has that
 			// map's data, and the server's map updates keep refreshing it, so keep reading it.
-			data = MapItem.getSavedData(lastMapId, level);
+			data = MapItem.getSavedData(lockedMapId != null ? lockedMapId : lastMapId, level);
 		}
 		{
 			if (data != null && data.colors != null) {
@@ -267,7 +273,7 @@ public final class DungeonWatcher {
 		out.add("spawn cell: " + (spawnDir < 0 ? "not captured" : (spawnX + 1) + "," + (spawnZ + 1) + " facing " + "NESW".charAt(spawnDir)));
 		out.add("tab puzzles: " + puzzleLines + (puzzlesUnknown >= 0 ? " (" + puzzlesUnknown + " undiscovered)" : ""));
 		out.add("in boss: " + inBoss + ", puzzles: " + puzzles + ", map seen: " + mapItemSeen
-			+ (lastMapId == null ? "" : " (map id " + lastMapId.id() + ")") + ", run #" + runId);
+			+ (lastMapId == null ? "" : " (map id " + lastMapId.id() + (lockedMapId != null ? ", locked" : "") + ")") + ", run #" + runId);
 		out.add("party (alive): " + party + ", map markers: " + teammates.size());
 		String[] n = names;
 		int named = 0;

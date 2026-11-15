@@ -498,6 +498,9 @@ public final class MapPainter {
 				case FAILED -> 0xFFFF5555;
 				case NONE -> 0xFFAAAAAA;
 			};
+			// The Entrance never gets a check icon (its tile is the check's green), so its name
+			// always uses the green-check colour.
+			if (t == Tile.ENTRANCE && opt.colorRoomNames()) color = 0xFF55FF55;
 			// Centred on the room's top-left tile.
 			float ncx = ox + (nameTile[0] + 0.5f) * cell, ncz = oz + (nameTile[1] + 0.5f) * cell;
 			String[] lines = wrap(font, name);

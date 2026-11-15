@@ -368,4 +368,25 @@ class RulesTest {
 			assertTrue(few.roomLabel[few.roomOf[q]].isEndRoom(), "cell " + q + " drawn as an end room");
 		}
 	}
+
+	@Test
+	void mapShiftTellsWhetherTheSidePuzzleColumnIsUsed() {
+		MapGrid g = MapGrid.spawnGrid(Floor.F5, 2, 5, 0);
+		// No side puzzles (5 columns centred): the extra column is certainly empty.
+		Prediction none = Predictor.predict(g, Model.seeded(), 4, -1, 0);
+		double side = 0;
+		for (int z = 0; z < g.h; z++) {
+			int i = g.idx(5, z);
+			assertEquals(1.0, none.labels[i][Label.EMPTY.ordinal()], 1e-9);
+		}
+		// At least one side puzzle (6 columns centred): the column's puzzle chances add up to >= 1.
+		Prediction some = Predictor.predict(g, Model.seeded(), 4, -1, 1);
+		for (int z = 0; z < g.h; z++) side += some.labels[g.idx(5, z)][Label.PUZZLE.ordinal()];
+		assertTrue(side >= 0.999, "side-column puzzle mass " + side);
+		// And the geometry reads it from the map position.
+		MapDecoder.Geometry five = new MapDecoder.Geometry(16, 16, 6), six = new MapDecoder.Geometry(16, 6, 6);
+		assertEquals(0, five.sidePuzzles(Floor.F5));
+		assertEquals(1, six.sidePuzzles(Floor.F5));
+		assertEquals(-1, six.sidePuzzles(Floor.F7), "F7 has no extra column");
+	}
 }
