@@ -278,14 +278,15 @@ public final class RoomPredictorClient implements ClientModInitializer {
 				config.showRoomNames ? watcher.names() : null, config.hideCommonNames, config.colorRoomNames,
 				config.showWitherDoors ? config.witherMinConfidence : 2f, config.showChecks));
 		boolean names = config.showNames && (!config.namesOnlyWithLeap || holdingLeap(mc));
-		// In the boss room positions are off the dungeon grid and teammate markers are stale.
-		if (watcher.active()) MapPainter.drawPlayers(ctx, mc.font, shown, config.hudX, config.hudY, size, config.style, markers(mc), names);
-
 		if (config.showNav && mc.player != null) {
 			int cx = (int) Math.floor((mc.player.getX() + 200) / 32), cz = (int) Math.floor((mc.player.getZ() + 200) / 32);
 			int from = cx >= 0 && cz >= 0 && cx < shown.w && cz < shown.h ? shown.idx(cx, cz) : -1;
 			MapPainter.drawNav(ctx, shown, config.hudX, config.hudY, size, config.style, from);
 		}
+
+		// Players last, so heads sit on top of the nav route. In the boss room positions are off
+		// the dungeon grid and teammate markers are stale.
+		if (watcher.active()) MapPainter.drawPlayers(ctx, mc.font, shown, config.hudX, config.hudY, size, config.style, markers(mc), names);
 	}
 
 	/**
