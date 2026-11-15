@@ -227,6 +227,22 @@ public final class Predictor {
 			probs.add(Label.ALL[k].isEndRoom() && k != Label.BLOOD.ordinal() ? endP(p[i]) : pk[0]);
 			shapeProbs.add(shapeChance(p, shapeP, i, Shape.S1x1));
 		}
+		// A cell that can't be a normal room (e.g. a boxed-in "?" with one door) must be a special
+		// room even if the counts say none are left: the map beats the counts.
+		for (int i = 0; i < n; i++) {
+			if (!free[i] || g.floor.isExtraColumn(g.x(i)) || p[i][Label.NORMAL.ordinal()] > 1e-9) continue;
+			int k = -1;
+			for (Label l : new Label[]{Label.BLOOD, Label.FAIRY, Label.TRAP, Label.YELLOW, Label.PUZZLE, Label.RARE}) {
+				if (k < 0 || p[i][l.ordinal()] > p[i][k]) k = l.ordinal();
+			}
+			if (p[i][k] <= 0) continue;
+			free[i] = false;
+			roomOf[i] = labels.size();
+			labels.add(Label.ALL[k]);
+			shapes.add(Shape.S1x1);
+			probs.add(Label.ALL[k].isEndRoom() && k != Label.BLOOD.ordinal() ? endP(p[i]) : p[i][k]);
+			shapeProbs.add(shapeChance(p, shapeP, i, Shape.S1x1));
+		}
 		for (int i = 0; i < n; i++) if (g.floor.isExtraColumn(g.x(i))) free[i] = false;
 
 		// 2) Big rooms, largest shapes first.

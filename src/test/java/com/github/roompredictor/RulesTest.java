@@ -362,5 +362,10 @@ class RulesTest {
 			for (Label k : Label.ALL) if (k.isEndRoom()) end += p.labels[q][k.ordinal()];
 			assertEquals(1.0, end, 1e-9, "cell " + q + " is End 100%");
 		}
+		// Even with only one puzzle "left" by the counts, the layout shows both as end rooms.
+		Prediction few = Predictor.predict(g, Model.seeded(), 5, 1);
+		for (int q : new int[]{g.idx(4, 5), g.idx(5, 5)}) {
+			assertTrue(few.roomLabel[few.roomOf[q]].isEndRoom(), "cell " + q + " drawn as an end room");
+		}
 	}
 }

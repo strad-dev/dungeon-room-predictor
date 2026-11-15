@@ -10,7 +10,9 @@ import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.MapItem;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.level.saveddata.maps.MapDecoration;
+import net.minecraft.world.level.saveddata.maps.MapId;
 import net.minecraft.world.level.saveddata.maps.MapDecorationTypes;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import net.minecraft.world.scores.DisplaySlot;
@@ -57,6 +59,8 @@ public final class DungeonWatcher {
 	private List<String> puzzleLines = List.of();
 	private boolean inBoss;
 	private byte[] lastSent;
+	/** The dungeon map's id, remembered for when the item isn't in slot 9. */
+	private MapId lastMapId;
 	private boolean mapItemSeen;
 	private List<String> lastSidebar = List.of();
 	/** Teammate markers from the map item: {mapPixelX, mapPixelZ, yawDegrees}. */
@@ -127,6 +131,7 @@ public final class DungeonWatcher {
 			puzzleLines = List.of();
 			inBoss = false;
 			lastSent = null;
+			lastMapId = null;
 			mapItemSeen = false;
 			teammates = List.of();
 			party = List.of();
@@ -172,8 +177,17 @@ public final class DungeonWatcher {
 
 		byte[] colors = null;
 		ItemStack stack = mc.player.getInventory().getItem(MAP_SLOT);
+		MapItemSavedData data = null;
 		if (stack.getItem() instanceof MapItem) {
-			MapItemSavedData data = MapItem.getSavedData(stack, level);
+			data = MapItem.getSavedData(stack, level);
+			MapId id = stack.get(DataComponents.MAP_ID);
+			if (id != null) lastMapId = id;
+		} else if (lastMapId != null) {
+			// Hypixel sometimes takes the map out of slot 9 for a while. The client still has that
+			// map's data, and the server's map updates keep refreshing it, so keep reading it.
+			data = MapItem.getSavedData(lastMapId, level);
+		}
+		{
 			if (data != null && data.colors != null) {
 				mapItemSeen = true;
 				// Teammates: the map item's markers, except the frame marker (that one is you).
@@ -252,7 +266,8 @@ public final class DungeonWatcher {
 			+ (chatFloor == null ? "" : chatFloorUsed ? " (used)" : " (waiting)"));
 		out.add("spawn cell: " + (spawnDir < 0 ? "not captured" : (spawnX + 1) + "," + (spawnZ + 1) + " facing " + "NESW".charAt(spawnDir)));
 		out.add("tab puzzles: " + puzzleLines + (puzzlesUnknown >= 0 ? " (" + puzzlesUnknown + " undiscovered)" : ""));
-		out.add("in boss: " + inBoss + ", puzzles: " + puzzles + ", map item in slot 9: " + mapItemSeen + ", run #" + runId);
+		out.add("in boss: " + inBoss + ", puzzles: " + puzzles + ", map seen: " + mapItemSeen
+			+ (lastMapId == null ? "" : " (map id " + lastMapId.id() + ")") + ", run #" + runId);
 		out.add("party (alive): " + party + ", map markers: " + teammates.size());
 		String[] n = names;
 		int named = 0;
