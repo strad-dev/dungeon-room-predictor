@@ -115,6 +115,28 @@ public final class MapGrid {
 		return -1;
 	}
 
+	/**
+	 * This grid, but with doors that {@code earlier} showed as wither or blood doors kept that
+	 * way. The map item redraws an opened wither door as a normal door; remembering it keeps the
+	 * door black on screen and keeps the Blood-rush path traceable.
+	 */
+	public MapGrid rememberDoors(MapGrid earlier) {
+		if (earlier == null || earlier.floor != floor) return this;
+		Link[] e = east.clone(), s = south.clone();
+		boolean changed = false;
+		for (int i = 0; i < size(); i++) {
+			if (e[i] == Link.DOOR && (earlier.east[i] == Link.WITHER_DOOR || earlier.east[i] == Link.BLOOD_DOOR)) {
+				e[i] = earlier.east[i];
+				changed = true;
+			}
+			if (s[i] == Link.DOOR && (earlier.south[i] == Link.WITHER_DOOR || earlier.south[i] == Link.BLOOD_DOOR)) {
+				s[i] = earlier.south[i];
+				changed = true;
+			}
+		}
+		return changed ? new MapGrid(floor, tiles, e, s, checks) : this;
+	}
+
 	public int size() {
 		return w * h;
 	}

@@ -52,4 +52,20 @@ class RulesTest {
 		assertEquals(32 / 3.0, m.bigTileTarget(2), 1e-9);
 		assertEquals(Model.F7_BIG_ROOMS, m.bigRoomLimit(5));
 	}
+
+	@Test
+	void openedWitherDoorsStayWitherDoors() {
+		MapGrid before = new MapGrid.Builder(Floor.F7)
+			.tile(0, 5, Tile.ENTRANCE).tile(0, 4, Tile.NORMAL).tile(0, 3, Tile.UNKNOWN)
+			.south(0, 4, Link.DOOR).south(0, 3, Link.WITHER_DOOR).build();
+		// After opening, the map item draws the wither door as a normal door.
+		MapGrid after = new MapGrid.Builder(Floor.F7)
+			.tile(0, 5, Tile.ENTRANCE).tile(0, 4, Tile.NORMAL).tile(0, 3, Tile.NORMAL)
+			.south(0, 4, Link.DOOR).south(0, 3, Link.DOOR).build();
+		MapGrid kept = after.rememberDoors(before);
+		assertEquals(Link.WITHER_DOOR, kept.link(kept.idx(0, 3), 2));
+		assertEquals(Link.DOOR, kept.link(kept.idx(0, 4), 2), "the Entrance door stays normal");
+		assertEquals(Tile.NORMAL, kept.tile(kept.idx(0, 3)));
+		assertSame(after, after.rememberDoors(after), "nothing to remember");
+	}
 }
