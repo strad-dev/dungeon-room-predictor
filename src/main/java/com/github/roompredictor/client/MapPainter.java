@@ -99,7 +99,9 @@ public final class MapPainter {
 
 		drawRoomLabels(ctx, font, g, opt, ox, oz, cell, tile, inset);
 
-		if (p == null || p.grid != g) return;
+		// The prediction may be one pass behind the newest map; it's only drawn on cells that are
+		// still unopened in the map being shown.
+		if (p == null || p.grid.floor != g.floor) return;
 
 		// The predicted completion of the map: each predicted room drawn as an outline in the colour
 		// of its type ("?" tiles keep their own grey), with one label on its top-left tile: its
@@ -149,8 +151,11 @@ public final class MapPainter {
 					secondP = e.getValue();
 				}
 				String l2 = second != null && secondP >= 0.1 ? second + " " + Math.round(secondP * 100) + "%" : null;
+				int color = labelColor(st, groupColor(l));
+				// Rooms with no "?" at all (completely unseen) get fainter text.
+				if (g.tile(at) != Tile.UNKNOWN) color = (color & 0x00FFFFFF) | 0x80000000;
 				text(ctx, font, tx, tz, tile, own + " " + Math.round(cat.getOrDefault(own, 0.0) * 100) + "%", l2,
-					labelColor(st, groupColor(l)), st.textScale);
+					color, st.textScale);
 			}
 		}
 
@@ -159,12 +164,12 @@ public final class MapPainter {
 		if (p.witherDoors != null) {
 			for (int i = 0; i < g.size(); i++) {
 				float tx = ox + g.x(i) * cell + inset, tz = oz + g.z(i) * cell + inset;
-				if (p.witherDoors[0][i] >= opt.witherMin()) {
+				if (p.witherDoors[0][i] >= opt.witherMin() && g.link(i, 1) == Link.NONE) {
 					float dx = tx + tile, dz = tz + (tile - door) / 2;
 					rect(ctx, dx - 1, dz - 1, cell - tile + 2, door + 2, 0xFFDDDDDD);
 					rect(ctx, dx, dz, cell - tile, door, st.witherDoor | 0xFF000000);
 				}
-				if (p.witherDoors[1][i] >= opt.witherMin()) {
+				if (p.witherDoors[1][i] >= opt.witherMin() && g.link(i, 2) == Link.NONE) {
 					float dx = tx + (tile - door) / 2, dz = tz + tile;
 					rect(ctx, dx - 1, dz - 1, door + 2, cell - tile + 2, 0xFFDDDDDD);
 					rect(ctx, dx, dz, door, cell - tile, st.witherDoor | 0xFF000000);
@@ -174,7 +179,7 @@ public final class MapPainter {
 
 		for (int i = 0; i < g.size(); i++) {
 			double[] probs = p.labels[i];
-			if (probs == null) continue;
+			if (probs == null || g.tile(i).explored()) continue;
 			Tile t = g.tile(i);
 			float tx = ox + g.x(i) * cell + inset;
 			float tz = oz + g.z(i) * cell + inset;
@@ -260,6 +265,31 @@ public final class MapPainter {
 		return g.toArray(new Group[0]);
 	}
 
+	/**
+	 * Nav to Blood: highlights every door on the route from the player's cell to Blood (drawn on
+	 * top of the map, same layout as {@link #draw}).
+	 */
+	public static void drawNav(GuiGraphicsExtractor ctx, MapGrid g, float x, float y, float size, Config.Style st,
+							   int fromCell) {
+		int blood = g.knownBlood();
+		if (fromCell < 0 || blood < 0) return;
+		Layout lay = layout(g, x, y, size, st);
+		float cell = lay.cell, tile = lay.tile, inset = lay.inset;
+		float door = Math.max(1, Math.round(cell * st.doorSize));
+		// Drawn exactly like wither doors: the route to Blood is the wither-door path.
+		int color = st.witherDoor | 0xFF000000;
+		for (int[] d : g.routeDoors(fromCell, blood)) {
+			int a = d[0], dir = d[1];
+			int b = g.neighbor(a, dir);
+			int left = (dir == 1 || dir == 2) ? a : b; // links are drawn from the left/top cell
+			float tx = lay.ox + g.x(left) * cell + inset, tz = lay.oz + g.z(left) * cell + inset;
+			boolean horizontal = dir == 1 || dir == 3;
+			float dx = horizontal ? tx + tile : tx + (tile - door) / 2;
+			float dz = horizontal ? tz + (tile - door) / 2 : tz + tile;
+			rect(ctx, dx, dz, horizontal ? cell - tile : door, horizontal ? door : cell - tile, color);
+		}
+	}
+
 	/** A player to draw: position in grid-cell units (cell centre = i + 0.5), or a skin for a head. */
 	public record Marker(float cellX, float cellZ, float yawDeg, net.minecraft.world.entity.player.PlayerSkin skin, String name) {
 	}
@@ -288,6 +318,7 @@ public final class MapPainter {
 		Layout lay = layout(g, x, y, size, st);
 		float cell = lay.cell, ox = lay.ox, oz = lay.oz;
 		for (Marker m : markers) {
+			if (m.cellX() < 0 || m.cellZ() < 0 || m.cellX() > g.w || m.cellZ() > g.h) continue; // off the grid
 			float px = ox + m.cellX() * cell;
 			float pz = oz + m.cellZ() * cell;
 			if (m.skin() != null) {

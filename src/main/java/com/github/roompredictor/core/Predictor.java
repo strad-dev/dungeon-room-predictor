@@ -69,6 +69,7 @@ public final class Predictor {
 		int[] roomFairy = fairyCell >= 0 ? g.roomBetween(fairyCell) : null;
 		Path path = path(g);
 		int soleUnknown = soleUnknownWithBlanks(g);
+		boolean[] mustBranch = mustLeadOnward(g);
 
 		boolean[][] masks = new boolean[n][];
 		int[] walled = new int[n];
@@ -80,6 +81,7 @@ public final class Predictor {
 			masks[i] = mask(g, i, floor, target, rareAllowed, doors[i], bloodFound);
 			applyTreeRules(masks[i], g, i, path);
 			if (i == soleUnknown) for (Label l : Label.ALL) masks[i][l.ordinal()] = l == Label.NORMAL;
+			if (mustBranch[i]) for (Label l : Label.ALL) if (l.isEndRoom()) masks[i][l.ordinal()] = false;
 		}
 
 		double[][] p = new double[n][];
@@ -728,6 +730,40 @@ public final class Predictor {
 	 * cells reachable from it), the blank cells belong to that room, so it's never a 1x1 (nor any
 	 * special room, which are all 1x1). Returns that "?" cell, or -1.
 	 */
+	/**
+	 * "?" cells that are the only way into some blank cells: no other "?" reaches those cells
+	 * through blank space, and there are no loops, so the room must lead onward (or extend into
+	 * them). It therefore has more than one door, or more than one tile: never an end room.
+	 */
+	public static boolean[] mustLeadOnward(MapGrid g) {
+		int n = g.size();
+		boolean[] out = new boolean[n];
+		List<Integer> unknowns = new java.util.ArrayList<>();
+		for (int i = 0; i < n; i++) if (g.tile(i) == Tile.UNKNOWN && !g.floor.isExtraColumn(g.x(i))) unknowns.add(i);
+		int[] reachedBy = new int[n];      // which "?" reached a blank cell first
+		int[] reachCount = new int[n];     // how many "?" can reach it
+		java.util.Arrays.fill(reachedBy, -1);
+		for (int q : unknowns) {
+			boolean[] seen = new boolean[n];
+			java.util.ArrayDeque<Integer> dq = new java.util.ArrayDeque<>();
+			seen[q] = true;
+			dq.add(q);
+			while (!dq.isEmpty()) {
+				int c = dq.poll();
+				for (int d = 0; d < 4; d++) {
+					int nb = g.neighbor(c, d);
+					if (nb < 0 || seen[nb] || g.tile(nb) != Tile.EMPTY || g.floor.isExtraColumn(g.x(nb))) continue;
+					seen[nb] = true;
+					reachCount[nb]++;
+					reachedBy[nb] = q;
+					dq.add(nb);
+				}
+			}
+		}
+		for (int i = 0; i < n; i++) if (reachCount[i] == 1) out[reachedBy[i]] = true;
+		return out;
+	}
+
 	public static int soleUnknownWithBlanks(MapGrid g) {
 		int unknown = -1, unknowns = 0, blanks = 0;
 		for (int i = 0; i < g.size(); i++) {

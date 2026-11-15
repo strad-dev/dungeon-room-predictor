@@ -30,6 +30,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 
 import com.github.roompredictor.core.MapDecoder;
+import com.github.roompredictor.core.MapGrid;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -159,6 +160,16 @@ public final class RoomPredictorClient implements ClientModInitializer {
 					config.save();
 					return ok(c, "Checkmarks " + (config.showChecks ? "on" : "off"));
 				}))
+				.then(literal("nav").executes(c -> {
+					config.showNav = !config.showNav;
+					config.save();
+					return ok(c, "Nav to Blood " + (config.showNav ? "on" : "off"));
+				}))
+				.then(literal("boss").executes(c -> {
+					config.showInBoss = !config.showInBoss;
+					config.save();
+					return ok(c, "Map in the boss room " + (config.showInBoss ? "shown" : "hidden"));
+				}))
 				.then(literal("rooms").executes(c -> {
 					config.showRoomNames = !config.showRoomNames;
 					config.save();
@@ -254,30 +265,27 @@ public final class RoomPredictorClient implements ClientModInitializer {
 			String line = "SCRP " + (config.enabled ? "" : "(off) ") + "floor=" + watcher.floor() + " | " + service.status();
 			ctx.text(mc.font, line, 2, mc.getWindow().getGuiScaledHeight() - 10, 0xFFFFFF55, true);
 		}
-		if (!config.enabled || !watcher.active()) return;
-		Prediction p = service.latest();
+		if (!config.enabled || watcher.floor() == null) return;
+		if (!watcher.active() && !config.showInBoss) return;
+		Prediction p = service.latestOrFinished();
 		if (p == null) return;
 		float size = config.hudSize;
-		MapPainter.draw(ctx, mc.font, p.grid, p, config.hudX, config.hudY, size,
+		// Draw the newest decoded map even if the prediction for it is still being computed.
+		MapGrid shown = service.liveGrid();
+		if (shown == null || shown.floor != p.grid.floor) shown = p.grid;
+		MapPainter.draw(ctx, mc.font, shown, p, config.hudX, config.hudY, size,
 			new MapPainter.Options(config.showBlank, config.bloodHeat, config.blankMinConfidence, config.style,
 				config.showRoomNames ? watcher.names() : null, config.hideCommonNames, config.colorRoomNames,
 				config.showWitherDoors ? config.witherMinConfidence : 2f, config.showChecks));
 		boolean names = config.showNames && (!config.namesOnlyWithLeap || holdingLeap(mc));
-		MapPainter.drawPlayers(ctx, mc.font, p.grid, config.hudX, config.hudY, size, config.style, markers(mc), names);
+		// In the boss room positions are off the dungeon grid and teammate markers are stale.
+		if (watcher.active()) MapPainter.drawPlayers(ctx, mc.font, shown, config.hudX, config.hudY, size, config.style, markers(mc), names);
 
-		String footer;
-		if (p.grid.count(com.github.roompredictor.core.Tile.BLOOD) > 0) footer = "Blood found";
-		else if (p.bloodCell >= 0) {
-			footer = String.format("Blood: (%d,%d) %d%%", p.grid.x(p.bloodCell) + 1, p.grid.z(p.bloodCell) + 1,
-				Math.round(p.bloodProbability * 100));
-		} else footer = "Blood: ?";
-		footer += "  " + Label.PUZZLE.abbrev + " " + p.puzzleTarget + (p.puzzlesFromTab ? "" : "?");
-		float s = Math.min(1f, size / 130f);
-		ctx.pose().pushMatrix();
-		ctx.pose().translate(config.hudX + 1, config.hudY + size + 2);
-		ctx.pose().scale(s, s);
-		ctx.text(mc.font, footer, 0, 0, 0xFFE0E0E0, true);
-		ctx.pose().popMatrix();
+		if (config.showNav && mc.player != null) {
+			int cx = (int) Math.floor((mc.player.getX() + 200) / 32), cz = (int) Math.floor((mc.player.getZ() + 200) / 32);
+			int from = cx >= 0 && cz >= 0 && cx < shown.w && cz < shown.h ? shown.idx(cx, cz) : -1;
+			MapPainter.drawNav(ctx, shown, config.hudX, config.hudY, size, config.style, from);
+		}
 	}
 
 	/**
@@ -369,6 +377,8 @@ public final class RoomPredictorClient implements ClientModInitializer {
 			"§e/srp names§r - toggle teammate names; §e/srp names leap§r - only while holding a Spirit Leap",
 			"§e/srp rooms§r - toggle room names (opened rooms only); §e/srp checks§r - checkmarks",
 			"§e/srp wither§r - toggle predicted wither doors (the rest of the Blood rush path)",
+			"§e/srp nav§r - toggle nav to Blood (highlights the doors between you and Blood)",
+			"§e/srp boss§r - toggle keeping the map up in the boss room",
 			"§e/srp blank§r - toggle guesses on unseen cells",
 			"§e/srp heat§r - toggle the Blood heat overlay",
 			"§e/srp stats§r - model and accuracy info",

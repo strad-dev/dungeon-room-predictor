@@ -247,7 +247,9 @@ class PredictorTest {
 		// Same first example, smaller step for the partial run.
 		Model a1 = Model.seeded(), b1 = Model.seeded();
 		Prediction p = Predictor.predict(MapGrid.spawnGrid(Floor.M7, 3, 5, 0), a1, 5);
-		int cell = full.idx(3, 4);
+		// A blank cell that's still uncertain (the "?" north of the Entrance is certainly normal
+		// now: it's the only way into the rest of the map, so there'd be nothing to learn).
+		int cell = full.idx(0, 0);
 		a1.update(p.features[cell], p.masks[cell], Label.NORMAL, 1.0);
 		b1.update(p.features[cell], p.masks[cell], Label.NORMAL, frac);
 		assertTrue(Math.abs(b1.weights[0][0] - Model.seeded().weights[0][0]) < Math.abs(a1.weights[0][0] - Model.seeded().weights[0][0]));

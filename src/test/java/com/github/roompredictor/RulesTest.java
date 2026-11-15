@@ -199,4 +199,46 @@ class RulesTest {
 		assertEquals(Shape.S1x1, p.roomShape[r]);
 		assertEquals(1.0, p.roomShapeP[r], 1e-9, "no other shape can fit");
 	}
+
+	@Test
+	void navFindsTheDoorsBetweenPlayerAndBlood() {
+		MapGrid full = TestMaps.fullM7();
+		int blood = full.knownBlood();
+		assertEquals(full.idx(3, 1), blood);
+		// From the Entrance: Entrance -> Red Blue -> Fairy -> Deathmite -> Blood = 4 doors.
+		java.util.List<int[]> doors = full.routeDoors(full.entrance(), blood);
+		assertEquals(4, doors.size());
+		// From inside Blood there's nothing to walk through.
+		assertTrue(full.routeDoors(blood, blood).isEmpty());
+		// Before Blood is opened, the "?" behind the red blood door is the target.
+		MapGrid g = Replay.at(full, TestMaps.revealOrder(full), 30);
+		if (g.tile(full.idx(3, 2)).explored()) assertEquals(full.idx(3, 1), g.knownBlood());
+	}
+
+	@Test
+	void onlyWayIntoBlankCellsIsNeverAnEndRoom() {
+		// Entrance + a 1x2 open; one "?" at (2,4); everything else blank and reachable only through it.
+		MapGrid g = new MapGrid.Builder(Floor.M7)
+			.tile(0, 5, Tile.ENTRANCE).tile(1, 5, Tile.NORMAL).tile(2, 5, Tile.NORMAL)
+			.east(0, 5, Link.DOOR).east(1, 5, Link.MERGED)
+			.tile(2, 4, Tile.UNKNOWN).south(2, 4, Link.DOOR)
+			.build();
+		assertTrue(Predictor.mustLeadOnward(g)[g.idx(2, 4)]);
+		Prediction p = Predictor.predict(g, Model.seeded(), 5);
+		double[] l = p.labels[g.idx(2, 4)];
+		for (Label k : Label.ALL) if (k.isEndRoom()) assertEquals(0, l[k.ordinal()], 1e-12, k + " is impossible");
+	}
+
+	@Test
+	void sharedBlankAreaDoesNotForceEitherUnknown() {
+		// Two "?" that can both reach the same blank area: neither is forced.
+		MapGrid g = new MapGrid.Builder(Floor.M7)
+			.tile(0, 5, Tile.ENTRANCE).tile(1, 5, Tile.NORMAL).tile(2, 5, Tile.NORMAL)
+			.east(0, 5, Link.DOOR).east(1, 5, Link.MERGED)
+			.tile(1, 4, Tile.UNKNOWN).south(1, 4, Link.DOOR)
+			.tile(2, 4, Tile.UNKNOWN).south(2, 4, Link.DOOR)
+			.build();
+		boolean[] m = Predictor.mustLeadOnward(g);
+		assertFalse(m[g.idx(1, 4)] || m[g.idx(2, 4)]);
+	}
 }

@@ -181,6 +181,51 @@ public final class MapGrid {
 		return changed ? new MapGrid(floor, tiles, e, s, checks) : this;
 	}
 
+	/**
+	 * Doors on the route from cell {@code from} to cell {@code to} over known doors and same-room
+	 * joins (unique, since there are no loops), as {cell, direction} pairs. Empty if unreachable.
+	 */
+	public java.util.List<int[]> routeDoors(int from, int to) {
+		java.util.List<int[]> out = new java.util.ArrayList<>();
+		if (from < 0 || to < 0 || from == to) return out;
+		int[] parent = new int[size()];
+		Arrays.fill(parent, -2);
+		parent[from] = -1;
+		ArrayDeque<Integer> q = new ArrayDeque<>();
+		q.add(from);
+		while (!q.isEmpty()) {
+			int c = q.poll();
+			if (c == to) break;
+			for (int d = 0; d < 4; d++) {
+				int nb = neighbor(c, d);
+				if (nb < 0 || parent[nb] != -2 || !link(c, d).walkable()) continue;
+				parent[nb] = c;
+				q.add(nb);
+			}
+		}
+		if (parent[to] == -2) return out;
+		for (int c = to; parent[c] >= 0; c = parent[c]) {
+			int a = parent[c];
+			for (int d = 0; d < 4; d++) {
+				if (neighbor(a, d) == c && link(a, d).isDoor()) out.add(new int[]{a, d});
+			}
+		}
+		return out;
+	}
+
+	/** Where Blood is, if known: the opened Blood room, or the "?" behind a visible blood door; else -1. */
+	public int knownBlood() {
+		int b = find(Tile.BLOOD);
+		if (b >= 0) return b;
+		for (int i = 0; i < size(); i++) {
+			for (int d = 0; d < 4; d++) {
+				int nb = neighbor(i, d);
+				if (nb >= 0 && link(i, d) == Link.BLOOD_DOOR && !tile(nb).explored()) return nb;
+			}
+		}
+		return -1;
+	}
+
 	public int size() {
 		return w * h;
 	}

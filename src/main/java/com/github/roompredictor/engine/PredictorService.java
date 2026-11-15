@@ -43,6 +43,11 @@ public final class PredictorService {
 	private final AtomicReference<Observation> pending = new AtomicReference<>();
 	private final AtomicBoolean scheduled = new AtomicBoolean();
 	private volatile Prediction latest;
+	/** The newest decoded map, published before the (slower) prediction pass so the overlay never lags the map item. */
+	private volatile MapGrid liveGrid;
+	private volatile long lastShowMs = -1, lastPredictMs = -1;
+	/** The last map of a run that has ended (boss entered), kept on screen until the next run. */
+	private volatile Prediction finished;
 	private volatile List<RunRecord> runs = List.of();
 	private volatile String lastError;
 	private volatile String status = "idle (not in a dungeon)";
@@ -151,15 +156,27 @@ public final class PredictorService {
 		return latest;
 	}
 
+	/** The current prediction, or the final map of the run that just ended (for the boss room). */
+	public Prediction latestOrFinished() {
+		Prediction p = latest;
+		return p != null ? p : finished;
+	}
+
 	/** Every stored run, oldest first. */
 	public List<RunRecord> runs() {
 		return runs;
 	}
 
 	/** Where decoding has got to, for {@code /srp debug}. */
+	/** The newest decoded map (may be newer than {@link #latestOrFinished()}'s grid), or null. */
+	public MapGrid liveGrid() {
+		return liveGrid;
+	}
+
 	public String status() {
 		Prediction p = latest;
-		return status + (p == null ? ", no prediction yet" : String.format(", predicting (%.2f ms, %d model updates)", p.computeNanos / 1e6, p.modelUpdates));
+		String timing = lastShowMs >= 0 ? String.format(", map change -> on screen %d ms, prediction %d ms", lastShowMs, lastPredictMs) : "";
+		return status + timing + (p == null ? ", no prediction yet" : String.format(", predicting (%.2f ms, %d model updates)", p.computeNanos / 1e6, p.modelUpdates));
 	}
 
 	public String lastError() {
@@ -458,10 +475,14 @@ public final class PredictorService {
 			if (geometry == null) geometry = MapDecoder.geometry(lastColors, floor);
 			if (geometry != null) {
 				MapGrid next = MapDecoder.decode(lastColors, floor, geometry);
+				MapGrid raw = next; // exactly what the map item shows, for drawing
 				if (!gridFromMap) grid = null; // the spawn guess isn't something the map revealed
 				next = next.rememberDoors(grid); // opened wither/blood doors stay wither/blood doors
-				next = next.markRushPath();      // once Blood is open, the whole path is wither doors
-				if (!next.sameAs(grid)) onNewGrid(next, o.timeMs());
+				if (!next.sameAs(grid)) {
+					onNewGrid(next, o.timeMs());
+					liveGrid = raw;
+					lastShowMs = System.currentTimeMillis() - o.timeMs();
+				}
 				gridFromMap = true;
 				status = "map decoded (room " + geometry.roomSize() + "px at " + geometry.offsetX() + "," + geometry.offsetZ() + ")";
 			} else {
@@ -486,6 +507,7 @@ public final class PredictorService {
 
 	private void startRun(Observation o) {
 		runId = o.runId();
+		finished = null;
 		runStartMs = o.timeMs();
 		floor = null;
 		geometry = null;
@@ -493,6 +515,7 @@ public final class PredictorService {
 		grid = null;
 		prediction = null;
 		latest = null;
+		liveGrid = null;
 		examples.clear();
 		toLabel.clear();
 		puzzles = 0;
@@ -536,7 +559,10 @@ public final class PredictorService {
 
 	private void repredict() {
 		if (floor == null || grid == null || model == null) return;
+		long t0 = System.nanoTime();
 		prediction = Predictor.predict(grid, model, puzzles, puzzlesUnknown);
+		lastPredictMs = (System.nanoTime() - t0) / 1_000_000;
+		if (!gridFromMap) liveGrid = grid; // the spawn guess, until the map item arrives
 		predictedAtUpdates = model.updates;
 		lastPuzzles = puzzles;
 		for (int i = 0; i < grid.size(); i++) {
@@ -563,7 +589,8 @@ public final class PredictorService {
 		r.time = runStartMs;
 		r.floor = floor.name();
 		r.puzzles = puzzles;
-		r.map = grid.encode();
+		// Stored with the whole Blood-rush path as wither doors (known once Blood is open), for training.
+		r.map = grid.markRushPath().encode();
 		r.reveal = reveal.clone();
 		r.bloodGuess = bloodGuess;
 		r.bloodGuessP = Math.round(bloodGuessP * 1000) / 1000.0;
@@ -581,6 +608,7 @@ public final class PredictorService {
 		// the live changes made during the run are dropped. (A running rebuild picks it up too.)
 		Trainer.train(base, r);
 		model = base.copy();
+		finished = prediction;
 		storage.saveModel(base);
 		startRunReset();
 	}
