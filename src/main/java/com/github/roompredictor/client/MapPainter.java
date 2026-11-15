@@ -153,8 +153,14 @@ public final class MapPainter {
 				}
 				String l2 = second != null && secondP >= 0.1 ? second + " " + Math.round(secondP * 100) + "%" : null;
 				int color = (labelColor(st, groupColor(l)) & 0x00FFFFFF) | 0x80000000; // predictions at 50%
-				text(ctx, font, tx, tz, tile, own + " " + Math.round(cat.getOrDefault(own, 0.0) * 100) + "%", l2,
-					color, st.textScale);
+				String l1 = own + " " + Math.round(cat.getOrDefault(own, 0.0) * 100) + "%";
+				if (g.tile(at) == Tile.UNKNOWN) {
+					// On a "?" tile: one line in the strip above the "?" glyph.
+					float qx = ox + g.x(at) * cell + inset, qz = oz + g.z(at) * cell + inset;
+					aboveQuestionMark(ctx, font, qx, qz, tile, l1, color, st.textScale);
+				} else {
+					text(ctx, font, tx, tz, tile, l1, l2, color, st.textScale);
+				}
 			}
 		}
 
@@ -207,7 +213,7 @@ public final class MapPainter {
 				l2 = groups[1].name() + " " + Math.round(groups[1].p() * 100) + "%";
 			}
 			int color = (labelColor(st, best.color()) & 0x00FFFFFF) | 0x80000000; // predictions at 50%
-			text(ctx, font, tx, tz, tile, l1, l2, color, st.textScale);
+			aboveQuestionMark(ctx, font, tx, tz, tile, l1, color, st.textScale);
 		}
 	}
 
@@ -477,6 +483,19 @@ public final class MapPainter {
 		".....",
 		"..#..",
 		"..#.."};
+
+	/**
+	 * One line of text in the strip above the "?" glyph (the top 5 of the tile's 16 pixels): at the
+	 * usual text size, or smaller if it wouldn't fit there.
+	 */
+	private static void aboveQuestionMark(GuiGraphicsExtractor ctx, Font font, float tx, float tz, float tile,
+										  String str, int color, float scale) {
+		float band = tile * 5f / 16f;
+		float s = Math.min(tile / (font.lineHeight * 2 + 2) * scale, (band - 1) / font.lineHeight);
+		s = Math.min(s, (tile - 2) / Math.max(1, font.width(str)));
+		if (s <= 0.05f) return;
+		line(ctx, font, str, tx + tile / 2, tz + (band - font.lineHeight * s) / 2 + 0.5f, s, color);
+	}
 
 	private static void questionMark(GuiGraphicsExtractor ctx, float tx, float tz, float tile) {
 		float u = tile / 16f;
