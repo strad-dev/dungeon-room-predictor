@@ -321,9 +321,57 @@ public final class PredictorService {
 			if (guessed > 0) {
 				out.accept(String.format("Blood guessed at run start: %d/%d right (%.0f%%)", right, guessed, 100.0 * right / guessed));
 			}
+			String[] bracketNames = {"E", "F1/M1", "F2-3/M2-3", "F4/M4", "F5-6/M5-6", "F7/M7"};
+			for (int b = 0; b < Floor.BRACKETS; b++) {
+				if (base.bigRuns[b] == 0) continue;
+				out.accept(String.format("%s big rooms (full maps, n=%d): avg %.1f rooms / %.1f tiles, max %d / %d",
+					bracketNames[b], base.bigRuns[b], base.bigRoomTotals[b] / base.bigRuns[b],
+					base.bigTileTotals[b] / base.bigRuns[b], base.bigRoomMax[b], base.bigTileMax[b]));
+			}
+			distanceReport(out);
 			Prediction p = prediction;
 			if (p != null) out.accept(String.format("Last inference: %.2f ms", p.computeNanos / 1e6));
 		}));
+	}
+
+	/**
+	 * "Tiles between" Entrance/Fairy/Blood on every stored map where all three were opened,
+	 * measured two ways: shortest walk, and counting each room passed through by its full size.
+	 * Whichever matches the known rules (Fairy 4-5 from Entrance, Blood 3 from Fairy) is how
+	 * Hypixel counts.
+	 */
+	private void distanceReport(Consumer<String> out) {
+		List<int[]> ef = new ArrayList<>(), fb = new ArrayList<>(), eb = new ArrayList<>();
+		for (RunRecord r : runs) {
+			MapGrid g = r.grid();
+			if (g == null) continue;
+			int e = g.entrance(), f = g.find(Tile.FAIRY), b = g.find(Tile.BLOOD);
+			if (e < 0 || f < 0 || b < 0) continue;
+			int[] we = g.walkDistances(e), wf = g.walkDistances(f), re = g.roomBetween(e), rf = g.roomBetween(f);
+			if (we[f] > 0 && re[f] >= 0) ef.add(new int[]{we[f] - 1, re[f]});
+			if (wf[b] > 0 && rf[b] >= 0) fb.add(new int[]{wf[b] - 1, rf[b]});
+			if (we[b] > 0 && re[b] >= 0) eb.add(new int[]{we[b] - 1, re[b]});
+		}
+		if (ef.isEmpty() && fb.isEmpty()) return;
+		out.accept("Tiles between (shortest walk | whole rooms), from stored maps:");
+		report(out, "  Entrance-Fairy", ef);
+		report(out, "  Fairy-Blood", fb);
+		report(out, "  Entrance-Blood", eb);
+	}
+
+	private static void report(Consumer<String> out, String label, List<int[]> v) {
+		if (v.isEmpty()) return;
+		int[] lo = {99, 99}, hi = {-1, -1};
+		double[] sum = new double[2];
+		for (int[] x : v) {
+			for (int k = 0; k < 2; k++) {
+				lo[k] = Math.min(lo[k], x[k]);
+				hi[k] = Math.max(hi[k], x[k]);
+				sum[k] += x[k];
+			}
+		}
+		out.accept(String.format("%s: %d-%d (avg %.1f) | %d-%d (avg %.1f), %d maps", label,
+			lo[0], hi[0], sum[0] / v.size(), lo[1], hi[1], sum[1] / v.size(), v.size()));
 	}
 
 	/** Runs the predictor on a stored map (for the map viewer), off the client thread. */

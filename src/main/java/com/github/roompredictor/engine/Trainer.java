@@ -57,7 +57,18 @@ public final class Trainer {
 			}
 			prev = Replay.at(fin, r.reveal, t);
 		}
-		m.recordShapes(floor.bracket(), Predictor.exploredShapeCounts(fin), w);
+		int[] shapes = Predictor.exploredShapeCounts(fin);
+		m.recordShapes(floor.bracket(), shapes, w);
+		// Big-room totals are only meaningful when every room was seen.
+		if (w >= 0.999) {
+			int rooms = 0, tiles = 0;
+			for (Shape s : Shape.ALL) {
+				if (s == Shape.S1x1) continue;
+				rooms += shapes[s.ordinal()];
+				tiles += shapes[s.ordinal()] * s.size();
+			}
+			m.recordBigRooms(floor.bracket(), rooms, tiles);
+		}
 		if (r.puzzles > 0) m.recordPuzzles(floor, r.puzzles);
 		return updates;
 	}

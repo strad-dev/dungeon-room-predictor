@@ -54,9 +54,11 @@ final class Priors {
 		for (int i = 0; i < bloodEntrMan.length; i++) blood[ENTR_MAN + i] = bloodEntrMan[i];
 		double[] bloodEntrWalk = {-4, -4, -4, -3.5, -3, -2.5, -2, -0.3, 0.3, 0.8, 1.5, 1.5, 0.8};
 		for (int i = 0; i < bloodEntrWalk.length; i++) blood[ENTR_WALK + i] = bloodEntrWalk[i];
-		double[] bloodFairyMan = {-6, -4, 1.5, -4, 2.0, -3, -4};
+		// Softened: if Hypixel counts whole rooms (see ENTR_ROOM), going through a 2x2 or L can
+		// break the 2-or-4 parity of the shortest walk.
+		double[] bloodFairyMan = {-6, -2, 1.0, -1.5, 1.5, -2, -3};
 		for (int i = 0; i < bloodFairyMan.length; i++) blood[FAIRY_MAN + i] = bloodFairyMan[i];
-		double[] bloodSoftFairy = {-2.0, 1.5, -2.0, 2.0, -0.5};
+		double[] bloodSoftFairy = {-1.5, 1.0, -1.0, 1.5, -0.5};
 		for (int i = 0; i < bloodSoftFairy.length; i++) blood[SOFT_FAIRY + i] = bloodSoftFairy[i];
 
 		// Path rules: the next unopened path room (behind a wither door) has two doors and isn't
@@ -64,10 +66,19 @@ final class Priors {
 		// through a normal door of the path's last room.
 		normal[PATH_FRONTIER] = 1.0;
 		for (double[] end : new double[][]{puzzle, trap, yellow, rare}) end[PATH_FRONTIER] = -3.0;
-		double[] bloodFairyWalk = {-6, -5, -4, -3, 3.0, -2, -2.5};
+		double[] bloodFairyWalk = {-4, -3, -2, -1, 1.5, -0.5, -1};
 		for (int i = 0; i < bloodFairyWalk.length; i++) blood[FAIRY_WALK + i] = bloodFairyWalk[i];
 		double[] bloodPathEst = {-4, -4, -4, -4, -4, -3, -2, -0.5, 0.3, 0.8, 1.5, 1.5, 0.8};
 		for (int i = 0; i < bloodPathEst.length; i++) blood[PATH_EST + i] = bloodPathEst[i];
+
+		// Whole-room "tiles between" (each room passed counts its full size): Entrance->Fairy 4-5,
+		// Fairy->Blood 3, Entrance->Blood 9-10.
+		double[] fairyEntrRoom = {-4, -3, -2, -0.5, 1.5, 1.5, 0, -1, -2, -3, -3, -3, -3};
+		for (int i = 0; i < fairyEntrRoom.length; i++) fairy[ENTR_ROOM + i] = fairyEntrRoom[i];
+		double[] bloodEntrRoom = {-4, -4, -4, -4, -3.5, -3, -2, -1, 0.5, 1.5, 1.5, 0.3, -0.5};
+		for (int i = 0; i < bloodEntrRoom.length; i++) blood[ENTR_ROOM + i] = bloodEntrRoom[i];
+		double[] bloodFairyRoom = {-5, -4, -2, 3.0, -1.5, -2.5, -3};
+		for (int i = 0; i < bloodFairyRoom.length; i++) blood[FAIRY_ROOM + i] = bloodFairyRoom[i];
 
 		fairy[BIAS] = -0.6;
 		fairy[WITHER_DOOR] = -2.0;
@@ -80,8 +91,17 @@ final class Priors {
 		for (int i = 0; i < fairyEntrMan.length; i++) fairy[ENTR_MAN + i] = fairyEntrMan[i];
 		double[] fairyEntrWalk = {-4, -2.5, -1.5, -0.3, 0.2, 0.6, 1.0, 1.0, 0.5, -0.2, -0.8, -1.5, -2};
 		for (int i = 0; i < fairyEntrWalk.length; i++) fairy[ENTR_WALK + i] = fairyEntrWalk[i];
-		double[] fairySoftBlood = {-2.0, 1.5, -2.0, 2.0, -0.5};
+		double[] fairySoftBlood = {-1.5, 1.0, -1.0, 1.5, -0.5};
 		for (int i = 0; i < fairySoftBlood.length; i++) fairy[SOFT_BLOOD + i] = fairySoftBlood[i];
+
+		// Shortest-walk distances count a 2x2 shortcut as 2 tiles where Hypixel seems to count 4, so
+		// trust them half as much as the whole-room ones; learning sorts out which is right.
+		for (int i = 0; i < 13; i++) {
+			blood[ENTR_WALK + i] *= 0.5;
+			fairy[ENTR_WALK + i] *= 0.5;
+			blood[PATH_EST + i] *= 0.5;
+			fairy[PATH_EST + i] *= 0.5;
+		}
 
 		// Extra puzzle column: mostly empty, sometimes a puzzle.
 		empty[BIAS] = 0;

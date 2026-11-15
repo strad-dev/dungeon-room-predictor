@@ -33,7 +33,10 @@ public final class Features {
 	public static final int FAIRY_CANDIDATE = 70;   // behind a normal door of the path's last room, Fairy unknown
 	public static final int FAIRY_WALK = 71;        // 7: walkable steps from the found Fairy 0..6+
 	public static final int PATH_EST = 78;          // 13: estimated path steps from the Entrance 0..12+
-	public static final int POS = 91;               // 6 brackets x 36 cells
+	// "Tiles between" counting each room passed through by its full size (see MapGrid#roomBetween).
+	public static final int ENTR_ROOM = 91;         // 13: from the Entrance 0..12+
+	public static final int FAIRY_ROOM = 104;       // 7: from the found Fairy 0..6+
+	public static final int POS = 111;              // 6 brackets x 36 cells
 	public static final int DIM = POS + Floor.BRACKETS * Floor.MAX_DIM * Floor.MAX_DIM;
 
 	private static final int MAX = 40;

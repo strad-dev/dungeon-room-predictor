@@ -221,6 +221,45 @@ public final class MapGrid {
 		return dist;
 	}
 
+	/**
+	 * "Tiles between" cell {@code from} and every cell, counting each room passed through by its
+	 * full size (how Hypixel appears to measure: going through a 2x2 counts 4 tiles, even when two
+	 * of them would be skipped by the shortest walk). The start and end rooms aren't counted.
+	 * -1 where unreachable over known links.
+	 */
+	public int[] roomBetween(int from) {
+		int n = size();
+		int[] dist = new int[n];
+		Arrays.fill(dist, -1);
+		if (from < 0) return dist;
+		int startComp = component[from];
+		java.util.PriorityQueue<int[]> q = new java.util.PriorityQueue<>((a, b) -> a[0] - b[0]);
+		int[] best = new int[n];
+		Arrays.fill(best, Integer.MAX_VALUE);
+		best[from] = 0;
+		q.add(new int[]{0, from});
+		while (!q.isEmpty()) {
+			int[] cur = q.poll();
+			int c = cur[1];
+			if (cur[0] > best[c]) continue;
+			for (int d = 0; d < 4; d++) {
+				int nb = neighbor(c, d);
+				Link l = link(c, d);
+				if (nb < 0 || !l.walkable()) continue;
+				int cost;
+				if (l == Link.MERGED) cost = 0;
+				else cost = (component[c] == startComp && startComp >= 0) ? 0 : componentSize(c);
+				int nd = cur[0] + cost;
+				if (nd < best[nb]) {
+					best[nb] = nd;
+					q.add(new int[]{nd, nb});
+				}
+			}
+		}
+		for (int i = 0; i < n; i++) dist[i] = best[i] == Integer.MAX_VALUE ? -1 : best[i];
+		return dist;
+	}
+
 	public int manhattan(int a, int b) {
 		return Math.abs(x(a) - x(b)) + Math.abs(z(a) - z(b));
 	}

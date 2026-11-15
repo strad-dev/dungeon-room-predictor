@@ -10,7 +10,7 @@ import java.util.Arrays;
  */
 public final class Model {
 	/** Bump when the feature layout changes; older model files are then reseeded, not misread. */
-	public static final int VERSION = 3;
+	public static final int VERSION = 4;
 
 	public double[][] weights = new double[Label.COUNT][Features.DIM];
 	public double[][] gradSq = new double[Label.COUNT][Features.DIM];
@@ -23,7 +23,42 @@ public final class Model {
 	public double[] shapeRuns = new double[Floor.BRACKETS];
 	public double[] puzzleTotals = new double[Floor.BRACKETS];
 	public int[] puzzleRuns = new int[Floor.BRACKETS];
+	/** Big rooms (bigger than 1x1) per fully opened map, per bracket: summed counts and tiles, runs, maxima. */
+	public double[] bigRoomTotals = new double[Floor.BRACKETS];
+	public double[] bigTileTotals = new double[Floor.BRACKETS];
+	public int[] bigRuns = new int[Floor.BRACKETS];
+	public int[] bigRoomMax = new int[Floor.BRACKETS];
+	public int[] bigTileMax = new int[Floor.BRACKETS];
 	public int version = VERSION;
+
+	/** Known F7/M7 rule: at most 7 big rooms covering at most 24 tiles, usually 22. */
+	public static final int F7_BIG_ROOMS = 7, F7_BIG_TILES_MAX = 24, F7_BIG_TILES_USUAL = 22;
+	private static final int MIN_RUNS_FOR_LIMITS = 3;
+
+	public void recordBigRooms(int bracket, int rooms, int tiles) {
+		bigRoomTotals[bracket] += rooms;
+		bigTileTotals[bracket] += tiles;
+		bigRuns[bracket]++;
+		bigRoomMax[bracket] = Math.max(bigRoomMax[bracket], rooms);
+		bigTileMax[bracket] = Math.max(bigTileMax[bracket], tiles);
+	}
+
+	/** Most big rooms a map of this bracket can have (Integer.MAX_VALUE if not known yet). */
+	public int bigRoomLimit(int bracket) {
+		if (bracket == 5) return F7_BIG_ROOMS;
+		return bigRuns[bracket] >= MIN_RUNS_FOR_LIMITS ? bigRoomMax[bracket] : Integer.MAX_VALUE;
+	}
+
+	public int bigTileLimit(int bracket) {
+		if (bracket == 5) return F7_BIG_TILES_MAX;
+		return bigRuns[bracket] >= MIN_RUNS_FOR_LIMITS ? bigTileMax[bracket] : Integer.MAX_VALUE;
+	}
+
+	/** Typical big-room tiles per map, or -1 if not known yet. F7/M7 blends the rule (worth 5 maps) with data. */
+	public double bigTileTarget(int bracket) {
+		if (bracket == 5) return (F7_BIG_TILES_USUAL * 5 + bigTileTotals[bracket]) / (5.0 + bigRuns[bracket]);
+		return bigRuns[bracket] >= MIN_RUNS_FOR_LIMITS ? bigTileTotals[bracket] / bigRuns[bracket] : -1;
+	}
 
 	/** A fresh model seeded with the known generation rules. */
 	public static Model seeded() {
@@ -113,6 +148,11 @@ public final class Model {
 		m.puzzleTotals = puzzleTotals.clone();
 		m.puzzleRuns = puzzleRuns.clone();
 		m.version = version;
+		m.bigRoomTotals = bigRoomTotals.clone();
+		m.bigTileTotals = bigTileTotals.clone();
+		m.bigRuns = bigRuns.clone();
+		m.bigRoomMax = bigRoomMax.clone();
+		m.bigTileMax = bigTileMax.clone();
 		return m;
 	}
 
@@ -140,6 +180,11 @@ public final class Model {
 		if (shapeRuns == null || shapeRuns.length != Floor.BRACKETS) shapeRuns = Arrays.copyOf(shapeRuns == null ? new double[0] : shapeRuns, Floor.BRACKETS);
 		if (puzzleTotals == null || puzzleTotals.length != Floor.BRACKETS) puzzleTotals = Arrays.copyOf(puzzleTotals == null ? new double[0] : puzzleTotals, Floor.BRACKETS);
 		if (puzzleRuns == null || puzzleRuns.length != Floor.BRACKETS) puzzleRuns = Arrays.copyOf(puzzleRuns == null ? new int[0] : puzzleRuns, Floor.BRACKETS);
+		if (bigRoomTotals == null || bigRoomTotals.length != Floor.BRACKETS) bigRoomTotals = new double[Floor.BRACKETS];
+		if (bigTileTotals == null || bigTileTotals.length != Floor.BRACKETS) bigTileTotals = new double[Floor.BRACKETS];
+		if (bigRuns == null || bigRuns.length != Floor.BRACKETS) bigRuns = new int[Floor.BRACKETS];
+		if (bigRoomMax == null || bigRoomMax.length != Floor.BRACKETS) bigRoomMax = new int[Floor.BRACKETS];
+		if (bigTileMax == null || bigTileMax.length != Floor.BRACKETS) bigTileMax = new int[Floor.BRACKETS];
 		if (!(learningRate > 0) || learningRate > 5) learningRate = 0.15;
 		if (!(l2 >= 0)) l2 = 1e-4;
 	}

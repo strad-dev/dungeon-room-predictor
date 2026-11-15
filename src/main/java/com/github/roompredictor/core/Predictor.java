@@ -56,6 +56,8 @@ public final class Predictor {
 		boolean bloodFound = target[Label.BLOOD.ordinal()] == 0;
 
 		int[] fairyWalk = fairyCell >= 0 ? g.walkDistances(fairyCell) : null;
+		int[] roomEntr = g.roomBetween(entrance);
+		int[] roomFairy = fairyCell >= 0 ? g.roomBetween(fairyCell) : null;
 		Path path = path(g);
 
 		boolean[][] masks = new boolean[n][];
@@ -76,7 +78,7 @@ public final class Predictor {
 				if (!cand[i]) continue;
 				Features f = new Features();
 				fill(f, g, i, bracket, entrance, walk, fairyCell, walled[i], doors[i], round == 0 ? null : p, cand);
-				addPathFeatures(f, g, i, path, walk, fairyWalk);
+				addPathFeatures(f, g, i, path, walk, fairyWalk, roomEntr, roomFairy);
 				feats[i] = f;
 				next[i] = Model.softmax(model.logits(f), masks[i]);
 			}
@@ -308,9 +310,14 @@ public final class Predictor {
 				double pb = p[b][Label.BLOOD.ordinal()];
 				if (pb < 0.02 || distFairy[b] < 0) continue;
 				int m = g.manhattan(f, b);
-				if (m != 2 && m != 4) continue;
+				double mw = switch (m) {
+					case 2, 4 -> 1.0;
+					case 1, 3, 5 -> 0.3;
+					default -> 0;
+				};
+				if (mw == 0) continue;
 				double len = base + distStart[f] + 4;
-				double w = pf * pb * Math.exp(-(len - 10.5) * (len - 10.5) / 8);
+				double w = pf * pb * mw * Math.exp(-(len - 10.5) * (len - 10.5) / 8);
 				if (w <= 0) continue;
 				total += w;
 				// start -> f: every door but the last (the normal door into Fairy) is a wither door.
@@ -380,7 +387,10 @@ public final class Predictor {
 		return dist;
 	}
 
-	static void addPathFeatures(Features f, MapGrid g, int i, Path path, int[] walk, int[] fairyWalk) {
+	static void addPathFeatures(Features f, MapGrid g, int i, Path path, int[] walk, int[] fairyWalk,
+								int[] roomEntr, int[] roomFairy) {
+		if (roomEntr[i] >= 0) f.oneHot(Features.ENTR_ROOM, 13, roomEntr[i]);
+		if (roomFairy != null && roomFairy[i] >= 0) f.oneHot(Features.FAIRY_ROOM, 7, roomFairy[i]);
 		if (i == path.frontier()) f.add(Features.PATH_FRONTIER, 1);
 		if (path.fairyCandidate()[i]) f.add(Features.FAIRY_CANDIDATE, 1);
 		if (fairyWalk != null && fairyWalk[i] >= 0) f.oneHot(Features.FAIRY_WALK, 7, fairyWalk[i]);
@@ -469,13 +479,33 @@ public final class Predictor {
 
 	static double[][] shapes(MapGrid g, Model model, boolean[] cand, double[][] p) {
 		int n = g.size();
-		double[] expected = model.expectedShapes(g.floor.bracket());
+		int bracket = g.floor.bracket();
+		double[] expected = model.expectedShapes(bracket);
 		int[] seen = exploredShapeCounts(g);
+		// Big rooms (anything bigger than 1x1) already opened.
+		int bigRooms = 0, bigTiles = 0;
+		for (Shape s : Shape.ALL) {
+			if (s == Shape.S1x1) continue;
+			bigRooms += seen[s.ordinal()];
+			bigTiles += seen[s.ordinal()] * s.size();
+		}
+		int roomLimit = model.bigRoomLimit(bracket), tileLimit = model.bigTileLimit(bracket);
+		double target = model.bigTileTarget(bracket);
+		double expectedBigLeft = 0;
+		for (Shape s : Shape.ALL) {
+			if (s != Shape.S1x1) expectedBigLeft += Math.max(0, expected[s.ordinal()] - seen[s.ordinal()]) * s.size();
+		}
+		// As the usual big-room tile total is used up, big shapes become less likely.
+		double budget = 1;
+		if (target > 0 && expectedBigLeft > 0) budget = Math.max(0.1, Math.min(2, (target - bigTiles) / expectedBigLeft));
 		double[] weight = new double[Shape.COUNT];
 		for (Shape s : Shape.ALL) {
 			int k = s.ordinal();
-			if (s != Shape.S1x1 && seen[k] >= Shape.MAX_PER_DUNGEON) continue;
-			weight[k] = Math.max(0.05, expected[k] - seen[k]);
+			if (s != Shape.S1x1) {
+				if (seen[k] >= Shape.MAX_PER_DUNGEON) continue;
+				if (bigRooms >= roomLimit || bigTiles + s.size() > tileLimit) continue;
+			}
+			weight[k] = Math.max(0.05, expected[k] - seen[k]) * (s == Shape.S1x1 ? 1 : budget);
 		}
 		double[][] out = new double[n][];
 		for (int i = 0; i < n; i++) {
