@@ -73,6 +73,7 @@ public final class MapPainter {
 			float tx = ox + g.x(i) * cell + inset;
 			float tz = oz + g.z(i) * cell + inset;
 			if (t != Tile.EMPTY) rect(ctx, tx, tz, tile, tile, tileColor(st, t));
+			if (t == Tile.UNKNOWN) questionMark(ctx, tx, tz, tile);
 			// Same-room joins and doors, drawn from the left/top cell.
 			for (int d = 1; d <= 2; d++) {
 				Link l = g.link(i, d);
@@ -151,9 +152,7 @@ public final class MapPainter {
 					secondP = e.getValue();
 				}
 				String l2 = second != null && secondP >= 0.1 ? second + " " + Math.round(secondP * 100) + "%" : null;
-				int color = labelColor(st, groupColor(l));
-				// Rooms with no "?" at all (completely unseen) get fainter text.
-				if (g.tile(at) != Tile.UNKNOWN) color = (color & 0x00FFFFFF) | 0x80000000;
+				int color = (labelColor(st, groupColor(l)) & 0x00FFFFFF) | 0x80000000; // predictions at 50%
 				text(ctx, font, tx, tz, tile, own + " " + Math.round(cat.getOrDefault(own, 0.0) * 100) + "%", l2,
 					color, st.textScale);
 			}
@@ -207,8 +206,7 @@ public final class MapPainter {
 				// Runner-up, so the player sees how close the call is.
 				l2 = groups[1].name() + " " + Math.round(groups[1].p() * 100) + "%";
 			}
-			int color = labelColor(st, best.color());
-			if (!known) color = (color & 0x00FFFFFF) | 0xDD000000;
+			int color = (labelColor(st, best.color()) & 0x00FFFFFF) | 0x80000000; // predictions at 50%
 			text(ctx, font, tx, tz, tile, l1, l2, color, st.textScale);
 		}
 	}
@@ -465,6 +463,27 @@ public final class MapPainter {
 			String[] lines = wrap(font, name);
 			float y0 = ncz - font.lineHeight * lines.length * s / 2;
 			for (int k = 0; k < lines.length; k++) line(ctx, font, lines[k], ncx, y0 + k * font.lineHeight * s, s, color);
+		}
+	}
+
+	/** The vanilla map item's "?" (5x9 pixels at (5,5) of a 16-pixel tile), in black. */
+	private static final String[] QUESTION = {
+		".###.",
+		"#...#",
+		"....#",
+		"...#.",
+		"..#..",
+		"..#..",
+		".....",
+		"..#..",
+		"..#.."};
+
+	private static void questionMark(GuiGraphicsExtractor ctx, float tx, float tz, float tile) {
+		float u = tile / 16f;
+		for (int r = 0; r < QUESTION.length; r++) {
+			for (int c = 0; c < QUESTION[r].length(); c++) {
+				if (QUESTION[r].charAt(c) == '#') rect(ctx, tx + (5 + c) * u, tz + (5 + r) * u, u, u, 0xFF000000);
+			}
 		}
 	}
 
