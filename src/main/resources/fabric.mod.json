@@ -1,0 +1,19 @@
+{
+	"schemaVersion": 1,
+	"id": "roompredictor",
+	"version": "${version}",
+	"name": "Strad Clear Rooms Predictor",
+	"description": "Predicts the type and size of unopened Hypixel dungeon rooms (and where Blood is) using only what the dungeon map item shows. Learns from your runs.",
+	"authors": ["Stradivarius"],
+	"license": "MIT",
+	"environment": "client",
+	"entrypoints": {
+		"client": ["com.github.roompredictor.RoomPredictorClient"]
+	},
+	"depends": {
+		"fabricloader": ">=0.18.4",
+		"minecraft": "~26.2-",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
