@@ -163,7 +163,7 @@ public final class RoomPredictorClient implements ClientModInitializer {
 				.then(literal("nav").executes(c -> {
 					config.showNav = !config.showNav;
 					config.save();
-					return ok(c, "Nav to Blood " + (config.showNav ? "on" : "off"));
+					return ok(c, "Nav (to Blood, or the next unopened wither door) " + (config.showNav ? "on" : "off"));
 				}))
 				.then(literal("boss").executes(c -> {
 					config.showInBoss = !config.showInBoss;
@@ -382,7 +382,7 @@ public final class RoomPredictorClient implements ClientModInitializer {
 			"§e/srp names§r - toggle teammate names; §e/srp names leap§r - only while holding a Spirit Leap",
 			"§e/srp rooms§r - toggle room names (opened rooms only); §e/srp checks§r - checkmarks",
 			"§e/srp wither§r - toggle predicted wither doors (the rest of the Blood rush path)",
-			"§e/srp nav§r - toggle nav to Blood (highlights the doors between you and Blood)",
+			"§e/srp nav§r - toggle nav: the doors between you and Blood, or the next unopened wither door",
 			"§e/srp boss§r - toggle keeping the map up in the boss room",
 			"§e/srp blank§r - toggle guesses on unseen cells",
 			"§e/srp heat§r - toggle the Blood heat overlay",

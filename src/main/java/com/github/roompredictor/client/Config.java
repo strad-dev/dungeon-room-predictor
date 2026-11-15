@@ -34,7 +34,7 @@ public final class Config {
 	public boolean colorRoomNames = true;
 	/** Checkmark icons on opened rooms, like Devonian's "Render Checkmarks". */
 	public boolean showChecks = true;
-	/** Nav to Blood: the doors between you and Blood, drawn as wither doors. */
+	/** Nav: the doors between you and Blood (or the next unopened wither door), drawn as wither doors. */
 	public boolean showNav = true;
 	/** Keep the map up in the boss room (like Devonian's "Show In Boss"). */
 	public boolean showInBoss = true;

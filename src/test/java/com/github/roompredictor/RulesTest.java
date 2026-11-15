@@ -300,4 +300,23 @@ class RulesTest {
 			assertTrue(unknowns <= 1, "room " + r + " has " + unknowns + " ? tiles");
 		}
 	}
+
+	@Test
+	void navFallsBackToTheNextUnopenedWitherDoor() {
+		MapGrid full = TestMaps.fullM7();
+		int[] reveal = TestMaps.revealOrder(full);
+		// Step where Fairy (3,3) is open but Deathmite behind its wither door isn't.
+		MapGrid g = null;
+		for (int t : Replay.steps(reveal)) {
+			MapGrid at = Replay.at(full, reveal, t);
+			if (at.tile(at.idx(3, 3)).explored() && !at.tile(at.idx(3, 2)).explored()) {
+				g = at;
+				break;
+			}
+		}
+		assertNotNull(g);
+		assertEquals(-1, g.knownBlood(), "Blood isn't known yet");
+		assertTrue(g.unopenedWitherRooms().contains(g.idx(3, 3)), "Fairy is in front of the unopened wither door");
+		assertFalse(g.routeDoors(g.entrance(), g.idx(3, 3)).isEmpty());
+	}
 }

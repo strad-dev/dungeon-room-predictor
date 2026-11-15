@@ -270,19 +270,33 @@ public final class MapPainter {
 	}
 
 	/**
-	 * Nav to Blood: highlights every door on the route from the player's cell to Blood (drawn on
-	 * top of the map, same layout as {@link #draw}).
+	 * Nav: the doors on the route from the player's cell to Blood if its location is known, else
+	 * to the nearest room with an unopened wither door (the next door of the Blood rush), drawn as
+	 * wither doors (same layout as {@link #draw}).
 	 */
 	public static void drawNav(GuiGraphicsExtractor ctx, MapGrid g, float x, float y, float size, Config.Style st,
 							   int fromCell) {
+		if (fromCell < 0) return;
+		java.util.List<int[]> route = null;
 		int blood = g.knownBlood();
-		if (fromCell < 0 || blood < 0) return;
+		if (blood >= 0) {
+			route = g.routeDoors(fromCell, blood);
+		} else {
+			for (int target : g.unopenedWitherRooms()) {
+				if (target == fromCell || (g.component(target) >= 0 && g.component(target) == g.component(fromCell))) {
+					return; // already standing in that room
+				}
+				java.util.List<int[]> r = g.routeDoors(fromCell, target);
+				if (!r.isEmpty() && (route == null || r.size() < route.size())) route = r;
+			}
+		}
+		if (route == null || route.isEmpty()) return;
 		Layout lay = layout(g, x, y, size, st);
 		float cell = lay.cell, tile = lay.tile, inset = lay.inset;
 		float door = Math.max(1, Math.round(cell * st.doorSize));
 		// Drawn exactly like wither doors: the route to Blood is the wither-door path.
 		int color = st.witherDoor | 0xFF000000;
-		for (int[] d : g.routeDoors(fromCell, blood)) {
+		for (int[] d : route) {
 			int a = d[0], dir = d[1];
 			int b = g.neighbor(a, dir);
 			int left = (dir == 1 || dir == 2) ? a : b; // links are drawn from the left/top cell

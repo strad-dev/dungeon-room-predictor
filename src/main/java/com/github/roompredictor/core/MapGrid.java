@@ -213,6 +213,22 @@ public final class MapGrid {
 		return out;
 	}
 
+	/** Opened cells in front of a wither door the map still shows (i.e. not yet opened). */
+	public java.util.List<Integer> unopenedWitherRooms() {
+		java.util.List<Integer> out = new java.util.ArrayList<>();
+		for (int i = 0; i < size(); i++) {
+			if (!tiles[i].explored()) continue;
+			for (int d = 0; d < 4; d++) {
+				int nb = neighbor(i, d);
+				if (nb >= 0 && link(i, d) == Link.WITHER_DOOR && !tiles[nb].explored()) {
+					out.add(i);
+					break;
+				}
+			}
+		}
+		return out;
+	}
+
 	/** Where Blood is, if known: the opened Blood room, or the "?" behind a visible blood door; else -1. */
 	public int knownBlood() {
 		int b = find(Tile.BLOOD);
