@@ -262,4 +262,23 @@ class RulesTest {
 		int boxed = p.roomOf[g.idx(1, 5)];
 		assertEquals(Shape.S1x1, p.roomShape[boxed]);
 	}
+
+	@Test
+	void boxedInOneDoorUnknownIsCertainlyAnEndRoom() {
+		// Like the screenshot: "?" at (4,5) between two opened rooms, Blood above, edge below,
+		// with its single door into the room on the left.
+		MapGrid g = new MapGrid.Builder(Floor.M7)
+			.tile(0, 5, Tile.ENTRANCE).tile(1, 5, Tile.NORMAL).tile(2, 5, Tile.NORMAL).tile(3, 5, Tile.NORMAL)
+			.east(0, 5, Link.DOOR).east(1, 5, Link.MERGED).east(2, 5, Link.MERGED)
+			.tile(5, 5, Tile.NORMAL).tile(4, 4, Tile.BLOOD)
+			.tile(4, 5, Tile.UNKNOWN).east(3, 5, Link.DOOR)
+			.build();
+		Prediction p = Predictor.predict(g, Model.seeded(), 5);
+		double[] l = p.labels[g.idx(4, 5)];
+		double end = 0;
+		for (Label k : Label.ALL) if (k.isEndRoom()) end += l[k.ordinal()];
+		assertEquals(1.0, end, 1e-9, "End 100%");
+		assertEquals(0, l[Label.NORMAL.ordinal()], 1e-12);
+		assertEquals(0, l[Label.FAIRY.ordinal()], 1e-12);
+	}
 }

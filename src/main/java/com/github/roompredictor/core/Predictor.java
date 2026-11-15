@@ -82,6 +82,7 @@ public final class Predictor {
 			applyTreeRules(masks[i], g, i, path);
 			if (i == soleUnknown) for (Label l : Label.ALL) masks[i][l.ordinal()] = l == Label.NORMAL;
 			if (mustBranch[i]) for (Label l : Label.ALL) if (l.isEndRoom()) masks[i][l.ordinal()] = false;
+			if (boxedIn(g, i) && doors[i] == 1) onlyEndRooms(masks[i]);
 		}
 
 		double[][] p = new double[n][];
@@ -331,6 +332,30 @@ public final class Predictor {
 		double shape = shapeP[at] == null ? (s == Shape.S1x1 ? 1 : 0) : shapeP[at][s.ordinal()];
 		double special = endP(l) + l[Label.BLOOD.ordinal()] + l[Label.FAIRY.ordinal()];
 		return Math.min(1, (s == Shape.S1x1 ? special : 0) + l[Label.NORMAL.ordinal()] * shape);
+	}
+
+	/**
+	 * Every side is an opened room or the map edge, so all of the cell's doors are on the map and
+	 * it can't extend anywhere: it's a 1x1 with exactly the doors shown.
+	 */
+	static boolean boxedIn(MapGrid g, int i) {
+		for (int d = 0; d < 4; d++) {
+			int nb = g.neighbor(i, d);
+			if (nb >= 0 && !g.tile(nb).explored()) return false;
+		}
+		return true;
+	}
+
+	/**
+	 * A boxed-in 1x1 with a single door is an end room: normal rooms are never one-door 1x1s, and
+	 * Fairy has two doors. Keeps only the end-room types still possible; if none are (the counts
+	 * disagree with the map), leaves the mask as it was.
+	 */
+	static void onlyEndRooms(boolean[] m) {
+		boolean any = false;
+		for (Label l : Label.ALL) if (l.isEndRoom() && m[l.ordinal()]) any = true;
+		if (!any) return;
+		for (Label l : Label.ALL) if (!l.isEndRoom()) m[l.ordinal()] = false;
 	}
 
 	/** Sides of a cell that are certainly walls: off-grid, or an explored room with no link. */
