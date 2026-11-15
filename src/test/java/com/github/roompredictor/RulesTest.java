@@ -319,4 +319,48 @@ class RulesTest {
 		assertTrue(g.unopenedWitherRooms().contains(g.idx(3, 3)), "Fairy is in front of the unopened wither door");
 		assertFalse(g.routeDoors(g.entrance(), g.idx(3, 3)).isEmpty());
 	}
+
+	@Test
+	void predictedDoorsJoinTheLayoutIntoATree() {
+		MapGrid g = MapGrid.spawnGrid(Floor.M7, 3, 5, 0);
+		Prediction p = Predictor.predict(g, Model.seeded(), 5);
+		int rooms = p.roomLabel.length;
+		// Union-find over predicted rooms through the predicted doors.
+		int[] parent = new int[rooms];
+		for (int r = 0; r < rooms; r++) parent[r] = r;
+		java.util.function.IntUnaryOperator find = new java.util.function.IntUnaryOperator() {
+			public int applyAsInt(int x) { while (parent[x] != x) x = parent[x] = parent[parent[x]]; return x; }
+		};
+		int[] doorsPerRoom = new int[rooms];
+		for (int[] d : p.roomDoors) {
+			int a = p.roomOf[d[0]], b = p.roomOf[g.neighbor(d[0], d[1])];
+			assertNotEquals(a, b);
+			int ra = find.applyAsInt(a), rb = find.applyAsInt(b);
+			assertNotEquals(ra, rb, "a predicted door would close a loop");
+			parent[ra] = rb;
+			doorsPerRoom[a]++;
+			doorsPerRoom[b]++;
+		}
+		assertEquals(rooms - 1, p.roomDoors.size(), "one tree: every predicted room connected, no loops");
+		for (int r = 0; r < rooms; r++) {
+			if (p.roomLabel[r].isEndRoom()) assertTrue(doorsPerRoom[r] <= 1, "end room " + r + " has " + doorsPerRoom[r] + " doors");
+		}
+	}
+
+	@Test
+	void twoNeighbouringUnknownsBoxedInAreBothEndRooms() {
+		// Like the screenshot: everything open except "?" at (4,5) and (5,5), side by side in the
+		// bottom-right corner, each with one door into the opened room above it.
+		MapGrid.Builder b = new MapGrid.Builder(Floor.M7);
+		for (int z = 0; z < 6; z++) for (int x = 0; x < 6; x++) b.tile(x, z, Tile.NORMAL);
+		b.tile(0, 0, Tile.ENTRANCE).tile(4, 5, Tile.UNKNOWN).tile(5, 5, Tile.UNKNOWN);
+		b.south(4, 4, Link.DOOR).south(5, 4, Link.DOOR);
+		MapGrid g = b.build();
+		Prediction p = Predictor.predict(g, Model.seeded(), 5);
+		for (int q : new int[]{g.idx(4, 5), g.idx(5, 5)}) {
+			double end = 0;
+			for (Label k : Label.ALL) if (k.isEndRoom()) end += p.labels[q][k.ordinal()];
+			assertEquals(1.0, end, 1e-9, "cell " + q + " is End 100%");
+		}
+	}
 }

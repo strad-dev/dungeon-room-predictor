@@ -110,6 +110,9 @@ public final class MapPainter {
 		// runner-up if it's at least 10%.
 		boolean[] covered = new boolean[g.size()];
 		if (opt.showBlank() && p.roomOf != null) {
+			// Rooms with a "?" tile already have the grey tile and "?" drawn; their outline is fainter.
+			boolean[] hasUnknown = new boolean[p.roomLabel.length];
+			for (int i = 0; i < g.size(); i++) if (p.roomOf[i] >= 0 && g.tile(i) == Tile.UNKNOWN) hasUnknown[p.roomOf[i]] = true;
 			for (int i = 0; i < g.size(); i++) {
 				int r = p.roomOf[i];
 				if (r < 0 || g.tile(i).explored()) continue;
@@ -118,6 +121,7 @@ public final class MapPainter {
 				boolean east = sameRoom(p, g, i, 1), south = sameRoom(p, g, i, 2);
 				boolean west = sameRoom(p, g, i, 3), north = sameRoom(p, g, i, 0);
 				int edge = labelColor(st, groupColor(p.roomLabel[r]));
+				if (hasUnknown[r]) edge = (edge & 0x00FFFFFF) | 0x66000000;
 				// Outer edges of the room, running through the gaps between its own tiles.
 				float x0 = west ? gx - (cell - tile) : gx, x1 = east ? gx + cell : gx + tile;
 				float z0 = north ? gz - (cell - tile) : gz, z1 = south ? gz + cell : gz + tile;
@@ -164,6 +168,22 @@ public final class MapPainter {
 			}
 		}
 
+		// Predicted doors joining the predicted rooms into a tree (likely wither doors are drawn
+		// black below instead).
+		if (opt.showBlank() && p.roomDoors != null) {
+			int doorColor = labelColor(st, Label.NORMAL);
+			for (int[] d : p.roomDoors) {
+				int i = d[0], dir = d[1];
+				if (g.link(i, dir) != Link.NONE) continue;
+				int j = g.neighbor(i, dir);
+				if (j < 0 || g.tile(i).explored() || g.tile(j).explored()) continue;
+				if (p.witherDoors != null && p.witherDoors[dir - 1][i] >= opt.witherMin()) continue;
+				float tx = ox + g.x(i) * cell + inset, tz = oz + g.z(i) * cell + inset;
+				if (dir == 1) rect(ctx, tx + tile, tz + (tile - door) / 2, cell - tile, door, doorColor);
+				else rect(ctx, tx + (tile - door) / 2, tz + tile, door, cell - tile, doorColor);
+			}
+		}
+
 		// Predicted wither doors (the rest of the Blood-rush path): solid, with a light outline so
 		// they read as guesses.
 		if (p.witherDoors != null) {
@@ -190,7 +210,7 @@ public final class MapPainter {
 			float tz = oz + g.z(i) * cell + inset;
 			double blood = probs[Label.BLOOD.ordinal()];
 			if (opt.bloodHeat() && blood >= 0.04) {
-				int a = (int) Math.round(Math.min(1.0, 0.3 + blood * 1.8) * 210);
+				int a = (int) Math.round(Math.min(1.0, 0.3 + blood * 1.8) * 128); // at most 50% opaque
 				rect(ctx, tx, tz, tile, tile, (a << 24) | 0xFF0000);
 			}
 			if (i == p.bloodCell && g.tile(i) != Tile.BLOOD) outline(ctx, tx, tz, tile, 0xFFFF3030);

@@ -130,6 +130,7 @@ public final class Predictor {
 
 		double[][] wither = witherDoors(g, p, path, walk);
 		Completion completion = complete(g, model, p, shapes, cand, target, rareAllowed);
+		completion = withDoors(g, completion, wither);
 		return new Prediction(g, p, shapes, footprints, completion, wither, feats, masks, bloodCell, bloodP, puzzleTarget, puzzlesFromTab > 0,
 			model.updates, System.nanoTime() - start);
 	}
@@ -165,7 +166,10 @@ public final class Predictor {
 
 	/** A predicted completion of the map (see {@link Prediction#roomOf}). */
 	/** {@code typeP}: chance the room is its type; {@code shapeP}: chance it has its shape. */
-	public record Completion(int[] roomOf, Label[] label, Shape[] shape, double[] typeP, double[] shapeP) {
+	public record Completion(int[] roomOf, Label[] label, Shape[] shape, double[] typeP, double[] shapeP, List<int[]> doors) {
+		Completion(int[] roomOf, Label[] label, Shape[] shape, double[] typeP, double[] shapeP) {
+			this(roomOf, label, shape, typeP, shapeP, List.of());
+		}
 	}
 
 	/**
@@ -310,6 +314,56 @@ public final class Predictor {
 		return new Completion(roomOf, labels.toArray(new Label[0]), shapes.toArray(new Shape[0]), pa, sa);
 	}
 
+	/**
+	 * Predicts the doors that join the predicted rooms into one tree (dungeons have no loops).
+	 * Rooms with a "?" tile already hang off the opened part through that tile's door; from them,
+	 * neighbouring predicted rooms are linked in one at a time, best link first (links on the
+	 * predicted Blood-rush path, i.e. likely wither doors, come first), so every predicted room
+	 * gets exactly one door back toward the opened part. End rooms get only that one door, and no
+	 * door is placed across a known wall. Returns the doors as {cell, dir} with dir 1 = east, 2 = south.
+	 */
+	static Completion withDoors(MapGrid g, Completion c, double[][] wither) {
+		int rooms = c.label().length;
+		int[] roomOf = c.roomOf();
+		boolean[] inTree = new boolean[rooms];
+		boolean[] isEnd = new boolean[rooms];
+		for (int r = 0; r < rooms; r++) isEnd[r] = c.label()[r].isEndRoom();
+		for (int i = 0; i < g.size(); i++) if (roomOf[i] >= 0 && g.tile(i) == Tile.UNKNOWN) inTree[roomOf[i]] = true;
+
+		// Possible links between different predicted rooms, across gaps the map says nothing about.
+		List<double[]> links = new java.util.ArrayList<>(); // {weight, cell, dir, roomA, roomB}
+		for (int i = 0; i < g.size(); i++) {
+			int a = roomOf[i];
+			if (a < 0) continue;
+			for (int dir = 1; dir <= 2; dir++) {
+				int j = g.neighbor(i, dir);
+				if (j < 0 || roomOf[j] < 0 || roomOf[j] == a || g.link(i, dir) != Link.NONE) continue;
+				double w = 1 + 5 * wither[dir - 1][i];
+				links.add(new double[]{w, i, dir, a, roomOf[j]});
+			}
+		}
+		List<int[]> doors = new java.util.ArrayList<>();
+		boolean grew = true;
+		while (grew) {
+			grew = false;
+			double[] best = null;
+			for (double[] l : links) {
+				int a = (int) l[3], b = (int) l[4];
+				boolean ab = inTree[a] && !isEnd[a] && !inTree[b];
+				boolean ba = inTree[b] && !isEnd[b] && !inTree[a];
+				if (!(ab || ba)) continue;
+				if (best == null || l[0] > best[0]) best = l;
+			}
+			if (best != null) {
+				doors.add(new int[]{(int) best[1], (int) best[2]});
+				inTree[(int) best[3]] = true;
+				inTree[(int) best[4]] = true;
+				grew = true;
+			}
+		}
+		return new Completion(roomOf, c.label(), c.shape(), c.typeP(), c.shapeP(), doors);
+	}
+
 	/** Puzzle + Trap + Yellow + Rare: the "End" (one-door 1x1) group. */
 	static double endP(double[] p) {
 		return p[Label.PUZZLE.ordinal()] + p[Label.TRAP.ordinal()] + p[Label.YELLOW.ordinal()] + p[Label.RARE.ordinal()];
@@ -335,13 +389,15 @@ public final class Predictor {
 	}
 
 	/**
-	 * Every side is an opened room or the map edge, so all of the cell's doors are on the map and
-	 * it can't extend anywhere: it's a 1x1 with exactly the doors shown.
+	 * Every side is an opened room, the map edge, or another "?" (a different room: one "?" per
+	 * room, and a door between two "?" rooms would close a loop since each already has its own
+	 * door into the opened part). So all of the cell's doors are on the map and it can't extend
+	 * anywhere: it's a 1x1 with exactly the doors shown.
 	 */
 	static boolean boxedIn(MapGrid g, int i) {
 		for (int d = 0; d < 4; d++) {
 			int nb = g.neighbor(i, d);
-			if (nb >= 0 && !g.tile(nb).explored()) return false;
+			if (nb >= 0 && g.tile(nb) == Tile.EMPTY) return false;
 		}
 		return true;
 	}

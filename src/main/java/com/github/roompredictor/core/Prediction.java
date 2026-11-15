@@ -18,6 +18,8 @@ public final class Prediction {
 	public final Shape[] roomShape;
 	public final double[] roomTypeP;
 	public final double[] roomShapeP;
+	/** Predicted doors joining the predicted rooms into a tree: {cell, dir} with dir 1 = east, 2 = south. */
+	public final java.util.List<int[]> roomDoors;
 	/** Predicted wither doors: {east, south} probability per cell for doors the map doesn't show yet. */
 	public final double[][] witherDoors;
 	/** Features used per candidate cell in the final round (kept for learning). Do not mutate. */
@@ -43,6 +45,7 @@ public final class Prediction {
 		this.roomShape = completion.shape();
 		this.roomTypeP = completion.typeP();
 		this.roomShapeP = completion.shapeP();
+		this.roomDoors = completion.doors();
 		this.features = features;
 		this.masks = masks;
 		this.bloodCell = bloodCell;
