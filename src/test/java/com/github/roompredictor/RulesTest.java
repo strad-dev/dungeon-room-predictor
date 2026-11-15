@@ -281,4 +281,23 @@ class RulesTest {
 		assertEquals(0, l[Label.NORMAL.ordinal()], 1e-12);
 		assertEquals(0, l[Label.FAIRY.ordinal()], 1e-12);
 	}
+
+	@Test
+	void twoUnknownTilesAreNeverOneRoom() {
+		// Two opened rooms, already connected, each with a door to a "?": (3,0) and (3,1) side by side.
+		MapGrid g = new MapGrid.Builder(Floor.M7)
+			.tile(0, 0, Tile.NORMAL).tile(1, 0, Tile.NORMAL).tile(2, 0, Tile.NORMAL)
+			.east(0, 0, Link.MERGED).east(1, 0, Link.MERGED)
+			.tile(2, 1, Tile.ENTRANCE).south(2, 0, Link.DOOR)
+			.tile(3, 0, Tile.UNKNOWN).east(2, 0, Link.DOOR)
+			.tile(3, 1, Tile.UNKNOWN).east(2, 1, Link.DOOR)
+			.build();
+		Prediction p = Predictor.predict(g, Model.seeded(), 5);
+		assertNotEquals(p.roomOf[g.idx(3, 0)], p.roomOf[g.idx(3, 1)], "two \"?\" tiles are two rooms");
+		for (int r = 0; r < p.roomLabel.length; r++) {
+			int unknowns = 0;
+			for (int c = 0; c < g.size(); c++) if (p.roomOf[c] == r && g.tile(c) == Tile.UNKNOWN) unknowns++;
+			assertTrue(unknowns <= 1, "room " + r + " has " + unknowns + " ? tiles");
+		}
+	}
 }

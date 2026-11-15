@@ -926,6 +926,11 @@ public final class Predictor {
 			if (!cand[j]) return false;
 			idx[k] = j;
 		}
+		// At most one "?" tile per room: each "?" hangs off an opened room by its own door, and the
+		// opened rooms are already connected, so one room with two "?" tiles would close a loop.
+		int unknowns = 0;
+		for (int j : idx) if (g.tile(j) == Tile.UNKNOWN) unknowns++;
+		if (unknowns > 1) return false;
 		// Must contain the whole visible room this cell belongs to.
 		for (int[] c : own) {
 			boolean in = false;
