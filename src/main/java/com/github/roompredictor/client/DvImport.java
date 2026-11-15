@@ -24,7 +24,7 @@ public final class DvImport {
 	/** What was found in the file, applied later on the client thread. */
 	public record Result(Config.Style style, Integer hudX, Integer hudY, Float hudSize,
 						 Boolean renderNames, Boolean namesRequireLeap, Boolean renderRoomNames,
-						 Boolean hideCommonRoomNames, Boolean colorRoomNames, List<String> imported) {
+						 Boolean hideCommonRoomNames, Boolean colorRoomNames, Boolean renderCheckmark, List<String> imported) {
 	}
 
 	private DvImport() {
@@ -66,6 +66,7 @@ public final class DvImport {
 		// Devonian's text size is relative to its default of 1.33.
 		float dvText = num(c, "textSize", -1, got);
 		if (dvText > 0) s.textScale = dvText / 1.33f;
+		s.iconSize = num(c, "iconSize", s.iconSize, got);
 		s.sanitize();
 
 		Integer x = null, y = null;
@@ -85,7 +86,7 @@ public final class DvImport {
 			}
 		}
 		return new Result(s, x, y, size, bool(c, "renderNames", got), bool(c, "namesRequireLeap", got),
-			bool(c, "renderRoomNames", got), bool(c, "dontRenderCommonRoomNames", got), bool(c, "colorRoomName", got), got);
+			bool(c, "renderRoomNames", got), bool(c, "dontRenderCommonRoomNames", got), bool(c, "colorRoomName", got), bool(c, "renderCheckmark", got), got);
 	}
 
 	private static Boolean bool(JsonObject c, String key, List<String> got) {
@@ -124,6 +125,7 @@ public final class DvImport {
 		s.background = o.background;
 		s.border = o.border;
 		s.borderWidth = o.borderWidth;
+		s.iconSize = o.iconSize;
 		s.textScale = o.textScale;
 		s.headSize = o.headSize;
 		s.roomSize = o.roomSize;

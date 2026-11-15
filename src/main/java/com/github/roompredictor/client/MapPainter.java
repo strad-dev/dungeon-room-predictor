@@ -7,7 +7,8 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 /** Draws a {@link MapGrid} and, optionally, a {@link Prediction} into a square on screen. */
 public final class MapPainter {
 	public record Options(boolean showBlank, boolean bloodHeat, float blankMinConfidence, Config.Style style,
-						  String[] roomNames, boolean hideCommonNames, boolean colorRoomNames, float witherMin) {
+						  String[] roomNames, boolean hideCommonNames, boolean colorRoomNames, float witherMin,
+						  boolean showChecks) {
 	}
 
 	private MapPainter() {
@@ -96,9 +97,7 @@ public final class MapPainter {
 			}
 		}
 
-		if (opt.roomNames() != null && opt.roomNames().length == g.size()) {
-			drawRoomNames(ctx, font, g, opt, ox, oz, cell, tile);
-		}
+		drawRoomLabels(ctx, font, g, opt, ox, oz, cell, tile, inset);
 
 		if (p == null || p.grid != g) return;
 
@@ -233,8 +232,6 @@ public final class MapPainter {
 				float d = Math.max(3, cell * st.headSize * 0.45f);
 				rect(ctx, px - d / 2 - 1, pz - d / 2 - 1, d + 2, d + 2, 0xFF000000);
 				rect(ctx, px - d / 2, pz - d / 2, d, d, 0xFF55FFFF);
-				// Touching the marker's border: half the marker + its 1px border + half the dot.
-				facing(ctx, px, pz, d / 2 + 2.5f, m.yawDeg(), 0xFF55FFFF);
 			}
 			if (names && m.name() != null) {
 				float s = Math.max(0.35f, Math.min(0.8f, cell / 40f));
@@ -242,15 +239,6 @@ public final class MapPainter {
 				line(ctx, font, m.name(), px, pz + hs / 2 + 1, s, 0xFFFFFFFF);
 			}
 		}
-	}
-
-	/** A small dot in front of the marker showing which way the player faces. */
-	private static void facing(GuiGraphicsExtractor ctx, float px, float pz, float r, float yawDeg, int color) {
-		double a = Math.toRadians(yawDeg);
-		// Minecraft yaw: 0 = +z (south), 90 = -x (west).
-		float fx = (float) (px - Math.sin(a) * r), fz = (float) (pz + Math.cos(a) * r);
-		rect(ctx, fx - 1.5f, fz - 1.5f, 3, 3, 0xFF000000);
-		rect(ctx, fx - 1, fz - 1, 2, 2, color);
 	}
 
 	private static void text(GuiGraphicsExtractor ctx, Font font, float tx, float tz, float tile, String l1, String l2, int color, float scale) {
@@ -272,16 +260,44 @@ public final class MapPainter {
 		ctx.pose().popMatrix();
 	}
 
-	/** One name per opened room: centred on rectangular rooms, on the middle tile of L rooms. */
-	private static void drawRoomNames(GuiGraphicsExtractor ctx, Font font, MapGrid g, Options opt,
-									  float ox, float oz, float cell, float tile) {
-		String[] names = opt.roomNames();
+	/**
+	 * Hypixel's checkmark, pixel for pixel as the map item draws it: a 9x9 tick centred in the
+	 * 16-pixel room tile (white = cleared, green = all secrets). The failed cross isn't captured
+	 * yet, so it uses the same 9x9 grid and stroke width.
+	 */
+	private static final String[] TICK = {
+		".......##",
+		"......###",
+		".....###.",
+		"....###..",
+		"##.###...",
+		"#####....",
+		"####.....",
+		".###.....",
+		".##......"};
+	private static final String[] CROSS = {
+		"##.....##",
+		"###...###",
+		".###.###.",
+		"..#####..",
+		"...###...",
+		"..#####..",
+		".###.###.",
+		"###...###",
+		"##.....##"};
+
+	/**
+	 * Per opened room, like Devonian's map: the checkmark icon in the middle of the room and the
+	 * room name centred on its top-left tile. Rectangular rooms put the icon in the middle of their
+	 * whole area; L rooms on their middle tile.
+	 */
+	private static void drawRoomLabels(GuiGraphicsExtractor ctx, Font font, MapGrid g, Options opt,
+									   float ox, float oz, float cell, float tile, float inset) {
+		String[] names = opt.roomNames() != null && opt.roomNames().length == g.size() ? opt.roomNames() : null;
 		boolean[] done = new boolean[g.size() + 1];
 		for (int i = 0; i < g.size(); i++) {
-			String name = names[i];
 			Tile t = g.tile(i);
-			if (name == null || !t.explored()) continue;
-			if (opt.hideCommonNames() && (t == Tile.ENTRANCE || t == Tile.FAIRY || t == Tile.BLOOD)) continue;
+			if (!t.explored()) continue;
 			int comp = g.component(i);
 			if (comp >= 0) {
 				if (done[comp]) continue;
@@ -298,15 +314,12 @@ public final class MapPainter {
 				sx += c[0];
 				sz += c[1];
 			}
-			int bw = maxX - minX + 1, bh = maxZ - minZ + 1;
-			float cx, cz, w, h;
-			if (bw * bh == cells.size()) {
+			float cx, cz;
+			int[] nameTile = {minX, minZ};
+			if ((maxX - minX + 1) * (maxZ - minZ + 1) == cells.size()) {
 				cx = ox + (minX + maxX + 1) / 2f * cell;
 				cz = oz + (minZ + maxZ + 1) / 2f * cell;
-				w = bw * cell - (cell - tile);
-				h = bh * cell - (cell - tile);
 			} else {
-				// L-shape: the tile nearest the middle of the room.
 				float mx = sx / cells.size(), mz = sz / cells.size();
 				int[] best = cells.getFirst();
 				for (int[] c : cells) {
@@ -314,23 +327,50 @@ public final class MapPainter {
 				}
 				cx = ox + (best[0] + 0.5f) * cell;
 				cz = oz + (best[1] + 0.5f) * cell;
-				w = tile;
-				h = tile;
+				// Top-left tile that actually belongs to the room.
+				nameTile = cells.getFirst();
+				for (int[] c : cells) if (c[1] < nameTile[1] || (c[1] == nameTile[1] && c[0] < nameTile[0])) nameTile = c;
 			}
-			String[] lines = wrap(font, name);
-			int widest = 0;
-			for (String l : lines) widest = Math.max(widest, font.width(l));
+
+			Check check = g.check(i);
+			if (opt.showChecks() && check != Check.NONE) {
+				float size = tile * opt.style().iconSize;
+				// The map palette colours Hypixel uses for the icons.
+				int color = switch (check) {
+					case GREEN -> 0xFF007C00;
+					case FAILED -> 0xFFFF0000;
+					default -> 0xFFFFFFFF;
+				};
+				icon(ctx, check == Check.FAILED ? CROSS : TICK, cx - size / 2, cz - size / 2, size, color);
+			}
+
+			String name = names == null ? null : names[i];
+			if (name == null) continue;
+			if (opt.hideCommonNames() && (t == Tile.ENTRANCE || t == Tile.FAIRY || t == Tile.BLOOD)) continue;
 			// Same size for every room: what fits two lines in one tile, times the text scale.
 			float s = tile / (font.lineHeight * 2 + 2) * opt.style().textScale;
 			if (s <= 0.05f) continue;
-			int color = !opt.colorRoomNames() ? 0xFFFFFFFF : switch (g.check(i)) {
+			int color = !opt.colorRoomNames() ? 0xFFFFFFFF : switch (check) {
 				case GREEN -> 0xFF55FF55;
 				case WHITE -> 0xFFFFFFFF;
 				case FAILED -> 0xFFFF5555;
 				case NONE -> 0xFFAAAAAA;
 			};
-			float y0 = cz - font.lineHeight * lines.length * s / 2;
-			for (int k = 0; k < lines.length; k++) line(ctx, font, lines[k], cx, y0 + k * font.lineHeight * s, s, color);
+			// Centred on the room's top-left tile.
+			float ncx = ox + (nameTile[0] + 0.5f) * cell, ncz = oz + (nameTile[1] + 0.5f) * cell;
+			String[] lines = wrap(font, name);
+			float y0 = ncz - font.lineHeight * lines.length * s / 2;
+			for (int k = 0; k < lines.length; k++) line(ctx, font, lines[k], ncx, y0 + k * font.lineHeight * s, s, color);
+		}
+	}
+
+	/** A 9x9 pixel icon, no outline (as on the map item). */
+	private static void icon(GuiGraphicsExtractor ctx, String[] mask, float x, float y, float size, int color) {
+		float u = size / mask.length;
+		for (int r = 0; r < mask.length; r++) {
+			for (int c = 0; c < mask[r].length(); c++) {
+				if (mask[r].charAt(c) == '#') rect(ctx, x + c * u, y + r * u, u, u, color);
+			}
 		}
 	}
 

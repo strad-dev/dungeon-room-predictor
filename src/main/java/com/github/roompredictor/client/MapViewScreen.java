@@ -84,7 +84,8 @@ public final class MapViewScreen extends Screen {
 			new MapPainter.Options(true, true, 0.3f, com.github.roompredictor.RoomPredictorClient.config().style,
 				run.names, com.github.roompredictor.RoomPredictorClient.config().hideCommonNames,
 				com.github.roompredictor.RoomPredictorClient.config().colorRoomNames,
-				com.github.roompredictor.RoomPredictorClient.config().witherMinConfidence));
+				com.github.roompredictor.RoomPredictorClient.config().witherMinConfidence,
+				com.github.roompredictor.RoomPredictorClient.config().showChecks));
 	}
 
 	@Override

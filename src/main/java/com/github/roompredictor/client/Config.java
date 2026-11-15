@@ -32,6 +32,8 @@ public final class Config {
 	public boolean hideCommonNames;
 	/** Room name colour follows the map checkmark: grey, white (cleared), green (all secrets), red (failed). */
 	public boolean colorRoomNames = true;
+	/** Checkmark icons on opened rooms, like Devonian's "Render Checkmarks". */
+	public boolean showChecks = true;
 	/** Predicted wither doors (rest of the Blood-rush path) at or above this probability. */
 	public boolean showWitherDoors = true;
 	public float witherMinConfidence = 0.3f;
@@ -52,6 +54,8 @@ public final class Config {
 		public float textScale = 0.75f;
 		/** Player head size as a fraction of a cell. */
 		public float headSize = 0.5f;
+		/** Checkmark icon size as a fraction of a room (Hypixel: 9 of 16 pixels). */
+		public float iconSize = 0.5625f;
 		public float doorSize = 0.32f;
 		public int entrance = 0xFF148500;
 		public int normal = 0xFF6B3A11;
@@ -74,6 +78,7 @@ public final class Config {
 			borderWidth = clamp(borderWidth, 0f, 20f);
 			textScale = textScale == 0 ? 0.75f : clamp(textScale, 0.2f, 2f);
 			headSize = headSize == 0 ? 0.5f : clamp(headSize, 0.15f, 1.5f);
+			iconSize = iconSize == 0 ? 0.5625f : clamp(iconSize, 0.1f, 1.5f);
 		}
 
 		private static float clamp(float v, float lo, float hi) {

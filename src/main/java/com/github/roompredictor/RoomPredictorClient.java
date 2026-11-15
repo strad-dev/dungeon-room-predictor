@@ -154,6 +154,11 @@ public final class RoomPredictorClient implements ClientModInitializer {
 					config.save();
 					return ok(c, "Predicted wither doors " + (config.showWitherDoors ? "shown" : "hidden"));
 				}))
+				.then(literal("checks").executes(c -> {
+					config.showChecks = !config.showChecks;
+					config.save();
+					return ok(c, "Checkmarks " + (config.showChecks ? "on" : "off"));
+				}))
 				.then(literal("rooms").executes(c -> {
 					config.showRoomNames = !config.showRoomNames;
 					config.save();
@@ -228,6 +233,7 @@ public final class RoomPredictorClient implements ClientModInitializer {
 			if (r.renderRoomNames() != null) config.showRoomNames = r.renderRoomNames();
 			if (r.hideCommonRoomNames() != null) config.hideCommonNames = r.hideCommonRoomNames();
 			if (r.colorRoomNames() != null) config.colorRoomNames = r.colorRoomNames();
+			if (r.renderCheckmark() != null) config.showChecks = r.renderCheckmark();
 			String extra = "";
 			if (position && r.hudX() != null) {
 				config.hudX = r.hudX();
@@ -255,7 +261,7 @@ public final class RoomPredictorClient implements ClientModInitializer {
 		MapPainter.draw(ctx, mc.font, p.grid, p, config.hudX, config.hudY, size,
 			new MapPainter.Options(config.showBlank, config.bloodHeat, config.blankMinConfidence, config.style,
 				config.showRoomNames ? watcher.names() : null, config.hideCommonNames, config.colorRoomNames,
-				config.showWitherDoors ? config.witherMinConfidence : 2f));
+				config.showWitherDoors ? config.witherMinConfidence : 2f, config.showChecks));
 		boolean names = config.showNames && (!config.namesOnlyWithLeap || holdingLeap(mc));
 		MapPainter.drawPlayers(ctx, mc.font, p.grid, config.hudX, config.hudY, size, config.style, markers(mc), names);
 
@@ -361,7 +367,7 @@ public final class RoomPredictorClient implements ClientModInitializer {
 			"§e/srp pos <x> <y>§r, §e/srp size <px>§r - move/resize the map",
 			"§e/srp text <scale>§r, §e/srp head <size>§r - label text size, your head size",
 			"§e/srp names§r - toggle teammate names; §e/srp names leap§r - only while holding a Spirit Leap",
-			"§e/srp rooms§r - toggle room names (opened rooms only)",
+			"§e/srp rooms§r - toggle room names (opened rooms only); §e/srp checks§r - checkmarks",
 			"§e/srp wither§r - toggle predicted wither doors (the rest of the Blood rush path)",
 			"§e/srp blank§r - toggle guesses on unseen cells",
 			"§e/srp heat§r - toggle the Blood heat overlay",
