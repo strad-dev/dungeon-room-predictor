@@ -202,6 +202,10 @@ public final class RoomPredictorClient implements ClientModInitializer {
 					service.rebuild();
 					return 1;
 				}))
+				.then(literal("export").executes(c -> {
+					service.exportTraining();
+					return 1;
+				}))
 				.then(literal("reload").executes(c -> {
 					service.reloadModel();
 					return 1;
@@ -386,6 +390,7 @@ public final class RoomPredictorClient implements ClientModInitializer {
 			"§e/srp debug§r - what the mod currently sees; §e/srp debug overlay§r - status line on screen",
 			"§e/srp lr <rate>§r - learning rate",
 			"§e/srp rebuild§r - retrain from every stored map (weighted by how much was opened)",
+			"§e/srp export§r - write a shareable model + maps (no timestamps) for bundling in a release",
 			"§e/srp save§r / §e/srp reload§r / §e/srp reset§r - model file"
 		};
 		for (String l : lines) c.getSource().sendFeedback(Component.literal(l));

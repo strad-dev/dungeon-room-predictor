@@ -36,6 +36,18 @@ ends, the saved model learns from the whole run instead, replayed in the order r
 every update weighted by the fraction of the map that was opened. `/srp rebuild` (and any change of
 feature layout) retrains from scratch on the whole map database the same way.
 
+## Shipping default weights
+
+Releases can ship the author's trained model so new players don't start from scratch:
+
+1. In game, run `/srp export`. It writes `config/roompredictor/export/model.json` (with the
+   learning history softened so players' own runs still adapt it) and `maps.jsonl` (no timestamps).
+2. In this project, run `./gradlew importTraining` (or `-Pfrom=<folder>`), then build.
+
+A fresh install starts from the shipped model and keeps learning locally from that player's runs.
+If an update changes the model layout, the rebuild replays the shipped maps plus the player's own
+(shipped maps that are also in the player's database are skipped). Nothing is ever uploaded.
+
 ## Files (`config/roompredictor/`)
 
 - `model.json` — learned weights. Updated live during runs; `/srp reload` picks up hand edits.

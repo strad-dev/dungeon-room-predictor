@@ -278,6 +278,24 @@ class PredictorTest {
 		s2.shutdown();
 	}
 
+	@Test
+	void exportStripsTimestampsAndSoftensHistory(@TempDir Path dir) throws Exception {
+		Storage st = new Storage(dir);
+		Model m = Model.seeded();
+		m.gradSq[0][0] = 8;
+		RunRecord r = run(TestMaps.fullM7(), TestMaps.revealOrder(TestMaps.fullM7()));
+		r.time = 1_794_000_000_000L;
+		Path out = st.exportTraining(m, List.of(r));
+		String maps = Files.readString(out.resolve("maps.jsonl"));
+		assertFalse(maps.contains("1794000000000"), "no timestamp in the shared maps");
+		assertTrue(maps.contains("\"time\":0"));
+		Model shipped = new com.google.gson.Gson().fromJson(Files.readString(out.resolve("model.json")), Model.class);
+		assertEquals(2.0, shipped.gradSq[0][0], 1e-9, "AdaGrad history softened to a quarter");
+		assertEquals(8.0, m.gradSq[0][0], 1e-9, "the player's own model is untouched");
+		assertEquals(Storage.key(r), Storage.key(new com.google.gson.Gson().fromJson(maps.trim(), RunRecord.class)),
+			"a shipped map is recognised as the same run (for dedupe)");
+	}
+
 	private static RunRecord run(MapGrid g, int[] reveal) {
 		RunRecord r = new RunRecord();
 		r.floor = g.floor.name();

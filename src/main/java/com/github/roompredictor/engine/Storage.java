@@ -83,6 +83,67 @@ public final class Storage {
 		}
 	}
 
+	private static final String BUNDLED = "/assets/roompredictor/default/";
+
+	/** The default model shipped in the jar (trained by the mod's author), or null. */
+	public Model loadBundledModel() {
+		try (java.io.InputStream in = Storage.class.getResourceAsStream(BUNDLED + "model.json")) {
+			if (in == null) return null;
+			Model m = GSON.fromJson(new java.io.InputStreamReader(in, StandardCharsets.UTF_8), Model.class);
+			if (m == null || m.version != Model.VERSION) return null;
+			m.sanitize();
+			return m;
+		} catch (IOException | JsonParseException e) {
+			return null;
+		}
+	}
+
+	/** The map database shipped in the jar, used for rebuilds. Empty if none. */
+	public List<RunRecord> loadBundledRuns() {
+		List<RunRecord> out = new ArrayList<>();
+		try (java.io.InputStream in = Storage.class.getResourceAsStream(BUNDLED + "maps.jsonl")) {
+			if (in == null) return out;
+			BufferedReader r = new BufferedReader(new java.io.InputStreamReader(in, StandardCharsets.UTF_8));
+			String line;
+			while ((line = r.readLine()) != null) {
+				if (line.isBlank()) continue;
+				try {
+					RunRecord rec = GSON.fromJson(line, RunRecord.class);
+					if (rec != null && rec.grid() != null) out.add(rec);
+				} catch (JsonParseException ignored) {
+				}
+			}
+		} catch (IOException ignored) {
+		}
+		return out;
+	}
+
+	/**
+	 * Writes a shareable copy of the training to {@code export/}: the model with its AdaGrad
+	 * history softened (so players' own runs still move it at a useful pace) and the map database
+	 * without timestamps. Nothing else about the player is in either file.
+	 */
+	public Path exportTraining(Model m, List<RunRecord> runs) throws IOException {
+		Path out = dir.resolve("export");
+		Files.createDirectories(out);
+		Model copy = m.copy();
+		for (double[] row : copy.gradSq) for (int i = 0; i < row.length; i++) row[i] *= 0.25;
+		Files.writeString(out.resolve("model.json"), GSON.toJson(copy), StandardCharsets.UTF_8);
+		StringBuilder sb = new StringBuilder();
+		for (RunRecord r : runs) {
+			RunRecord c = GSON.fromJson(GSON.toJson(r), RunRecord.class);
+			c.time = 0;
+			sb.append(GSON.toJson(c)).append((char) 10);
+		}
+		Files.writeString(out.resolve("maps.jsonl"), sb.toString(), StandardCharsets.UTF_8);
+		return out;
+	}
+
+	/** Identity of a stored run, for skipping bundled maps that are also in the local database. */
+	public static String key(RunRecord r) {
+		return r.floor + "|" + r.map + "|" + java.util.Arrays.toString(r.reveal);
+	}
+
 	public void appendRun(RunRecord r) {
 		try {
 			Files.createDirectories(dir);

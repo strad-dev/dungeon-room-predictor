@@ -67,6 +67,8 @@ public final class PredictorService {
 		return t;
 	});
 	private volatile boolean rebuilding;
+	/** Maps shipped in the jar (the author's training data), used for rebuilds. */
+	private List<RunRecord> bundledRuns = List.of();
 	private int runId = Integer.MIN_VALUE;
 	private int finishedRunId = Integer.MIN_VALUE;
 	private long runStartMs;
@@ -100,10 +102,20 @@ public final class PredictorService {
 		this.notify = notify;
 		worker.execute(guard(() -> {
 			base = storage.loadModel();
-			model = base.copy();
 			runs = Collections.unmodifiableList(new ArrayList<>(storage.loadRuns()));
-			// A fresh model (first launch, or the feature layout changed) is rebuilt from the maps.
-			if (storage.lastLoadWasFresh() && !runs.isEmpty()) startRebuild(false);
+			bundledRuns = storage.loadBundledRuns();
+			if (storage.lastLoadWasFresh()) {
+				// No usable local model: start from the one shipped in the jar if it fits this
+				// version, otherwise rebuild from the shipped maps plus this player's own.
+				Model shipped = storage.loadBundledModel();
+				if (shipped != null && runs.isEmpty()) {
+					base = shipped;
+					storage.saveModel(base);
+				} else if (!runs.isEmpty() || !bundledRuns.isEmpty()) {
+					startRebuild(false);
+				}
+			}
+			model = base.copy();
 		}));
 	}
 
@@ -119,12 +131,18 @@ public final class PredictorService {
 		}
 		rebuilding = true;
 		List<RunRecord> snapshot = runs;
+		// Shipped maps first (minus any that are also in this player's own database), then their own.
+		java.util.Set<String> local = new java.util.HashSet<>();
+		for (RunRecord r : snapshot) local.add(Storage.key(r));
+		List<RunRecord> shipped = new ArrayList<>();
+		for (RunRecord r : bundledRuns) if (!local.contains(Storage.key(r))) shipped.add(r);
 		double lr = base.learningRate;
-		if (announce) notify.accept("Rebuilding the model from " + snapshot.size() + " stored maps...");
+		if (announce) notify.accept("Rebuilding the model from " + (snapshot.size() + shipped.size()) + " maps...");
 		rebuilder.execute(() -> {
 			try {
 				Model m = Model.seeded();
 				m.learningRate = lr;
+				for (RunRecord r : shipped) Trainer.train(m, r);
 				for (RunRecord r : snapshot) Trainer.train(m, r);
 				worker.execute(guard(() -> {
 					// Runs that finished while rebuilding.
@@ -135,7 +153,7 @@ public final class PredictorService {
 					predictedAtUpdates = -1;
 					repredict();
 					rebuilding = false;
-					notify.accept("Model rebuilt from " + runs.size() + " maps (" + base.updates + " updates).");
+					notify.accept("Model rebuilt from " + (runs.size() + shipped.size()) + " maps (" + base.updates + " updates).");
 				}));
 			} catch (Throwable t) {
 				rebuilding = false;
@@ -293,6 +311,19 @@ public final class PredictorService {
 			predictedAtUpdates = -1;
 			repredict();
 			notify.accept("Model reloaded (" + base.updates + " updates).");
+		}));
+	}
+
+	/** Writes a shareable copy of the model and maps to config/roompredictor/export/ for bundling. */
+	public void exportTraining() {
+		worker.execute(guard(() -> {
+			try {
+				java.nio.file.Path out = storage.exportTraining(base, runs);
+				notify.accept("Exported " + runs.size() + " maps and the model to " + out
+					+ " - run ./gradlew importTraining in the mod project to bundle them.");
+			} catch (java.io.IOException e) {
+				notify.accept("Export failed: " + e);
+			}
 		}));
 	}
 

@@ -48,3 +48,17 @@ jar {
 	from("LICENSE")
 	from("LICENSE-Odin")
 }
+
+// Copies the output of /srp export into the mod's resources, so the next build ships it as the
+// default model and map set. Pass -Pfrom=<folder> to use a different export folder.
+tasks.register("importTraining", Copy) {
+	def from = project.hasProperty("from") ? project.property("from") :
+		"${System.getenv('APPDATA')}/.minecraft/config/roompredictor/export"
+	from(from) {
+		include "model.json", "maps.jsonl"
+	}
+	into "src/main/resources/assets/roompredictor/default"
+	doFirst {
+		if (!file("${from}/model.json").exists()) throw new GradleException("No export found in ${from}; run /srp export in game first.")
+	}
+}
