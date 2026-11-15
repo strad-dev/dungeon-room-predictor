@@ -30,7 +30,7 @@ public final class PredictorService {
 	private static final long LABEL_DELAY_MS = 1200;
 
 	/** Everything the client thread knows at one moment. {@code colors} is a private copy. */
-	public record Observation(int runId, long timeMs, Floor floor, byte[] colors, int puzzles, String[] names,
+	public record Observation(int runId, long timeMs, Floor floor, byte[] colors, int puzzles, int puzzlesUnknown, String[] names,
 							  int spawnX, int spawnZ, int spawnDir) {
 	}
 
@@ -79,6 +79,7 @@ public final class PredictorService {
 	private int bloodGuess = -1;
 	private double bloodGuessP;
 	private int puzzles;
+	private int puzzlesUnknown = -1;
 	private String[] names;
 	/** Spawn cell and facing (0 N .. 3 W) when the player joined this dungeon, or -1. */
 	private int spawnX = -1, spawnZ = -1, spawnDir = -1;
@@ -439,6 +440,10 @@ public final class PredictorService {
 			bloodGuess = -1;
 		}
 		if (o.puzzles() > 0) puzzles = o.puzzles();
+		if (o.puzzlesUnknown() != puzzlesUnknown) {
+			puzzlesUnknown = o.puzzlesUnknown();
+			lastPuzzles = -1; // re-predict
+		}
 		if (o.names() != null) names = o.names();
 		if (o.spawnDir() >= 0) {
 			spawnX = o.spawnX();
@@ -530,7 +535,7 @@ public final class PredictorService {
 
 	private void repredict() {
 		if (floor == null || grid == null || model == null) return;
-		prediction = Predictor.predict(grid, model, puzzles);
+		prediction = Predictor.predict(grid, model, puzzles, puzzlesUnknown);
 		predictedAtUpdates = model.updates;
 		lastPuzzles = puzzles;
 		for (int i = 0; i < grid.size(); i++) {

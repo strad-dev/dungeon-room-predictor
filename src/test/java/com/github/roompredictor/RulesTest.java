@@ -68,4 +68,66 @@ class RulesTest {
 		assertEquals(Tile.NORMAL, kept.tile(kept.idx(0, 3)));
 		assertSame(after, after.rememberDoors(after), "nothing to remember");
 	}
+
+	@Test
+	void secondUnknownRoomIsNeverOnTheBloodPath() {
+		// Entrance -> 1x4 along row 5... the path continues through a wither door into (3,3);
+		// another "?" at (0,3) hangs off the 1x4 by a normal door: a different branch.
+		MapGrid g = new MapGrid.Builder(Floor.F7)
+			.tile(0, 5, Tile.ENTRANCE)
+			.tile(0, 4, Tile.NORMAL).tile(1, 4, Tile.NORMAL).tile(2, 4, Tile.NORMAL).tile(3, 4, Tile.NORMAL)
+			.east(0, 4, Link.MERGED).east(1, 4, Link.MERGED).east(2, 4, Link.MERGED).south(0, 4, Link.DOOR)
+			.tile(3, 3, Tile.UNKNOWN).south(3, 3, Link.WITHER_DOOR)
+			.tile(0, 3, Tile.UNKNOWN).south(0, 3, Link.DOOR)
+			.build();
+		Prediction p = Predictor.predict(g, Model.seeded(), 4);
+		int other = g.idx(0, 3), frontier = g.idx(3, 3);
+		assertEquals(0, p.labels[other][Label.BLOOD.ordinal()], 1e-12);
+		assertEquals(0, p.labels[other][Label.FAIRY.ordinal()], 1e-12, "a second ? is never on the path");
+		assertEquals(0, p.labels[frontier][Label.FAIRY.ordinal()], 1e-12, "Fairy's door in is normal, not wither");
+		double blood = 0, fairy = 0;
+		for (double[] l : p.labels) if (l != null) {
+			blood += l[Label.BLOOD.ordinal()];
+			fairy += l[Label.FAIRY.ordinal()];
+		}
+		assertEquals(1, blood, 0.02);
+		assertEquals(1, fairy, 0.02);
+	}
+
+	@Test
+	void lastUnknownRoomWithBlankCellsIsNeverOneByOne() {
+		// Full M7 map with one 1x3 (Wizard, (2,3)-(2,5)) not yet opened: its door tile shows as "?",
+		// the other two tiles are blank. That "?" can't be a 1x1 or a special room.
+		MapGrid full = TestMaps.fullM7();
+		MapGrid.Builder b = new MapGrid.Builder(Floor.M7);
+		for (int i = 0; i < full.size(); i++) {
+			int x = full.x(i), z = full.z(i);
+			boolean wizard = x == 2 && z >= 3;
+			if (!wizard) b.tile(x, z, full.tile(i));
+			if (!wizard && x + 1 < 6 && !(x + 1 == 2 && z >= 3)) b.east(x, z, full.link(i, 1));
+			if (!wizard && z + 1 < 6) b.south(x, z, full.link(i, 2));
+		}
+		b.tile(2, 3, Tile.UNKNOWN).east(2, 3, Link.DOOR); // Wizard's door to Fairy at (3,3)
+		MapGrid g = b.build();
+		assertEquals(g.idx(2, 3), Predictor.soleUnknownWithBlanks(g));
+		Prediction p = Predictor.predict(g, Model.seeded(), 2);
+		int q = g.idx(2, 3);
+		assertEquals(1.0, p.labels[q][Label.NORMAL.ordinal()], 1e-9);
+		assertEquals(0, p.shapes[q][Shape.S1x1.ordinal()], 1e-12);
+		assertTrue(p.shapes[q][Shape.S1x3.ordinal()] > 0, "the real shape is still possible");
+	}
+
+	@Test
+	void tabUndiscoveredPuzzleCountCapsPuzzleGuesses() {
+		MapGrid g = MapGrid.spawnGrid(Floor.M7, 3, 5, 0);
+		double withoutTab = 0, withTab = 0;
+		Prediction a = Predictor.predict(g, Model.seeded(), 5);
+		Prediction b = Predictor.predict(g, Model.seeded(), 5, 2);
+		for (int i = 0; i < g.size(); i++) {
+			if (a.labels[i] != null) withoutTab += a.labels[i][Label.PUZZLE.ordinal()];
+			if (b.labels[i] != null) withTab += b.labels[i][Label.PUZZLE.ordinal()];
+		}
+		assertEquals(5, withoutTab, 0.1);
+		assertEquals(2, withTab, 0.1, "tab says only 2 puzzles are still undiscovered");
+	}
 }

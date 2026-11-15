@@ -52,6 +52,9 @@ public final class DungeonWatcher {
 	private long chatFloorAt;
 	private boolean chatFloorUsed;
 	private int puzzles;
+	/** Puzzles the tab list still shows as "???" (undiscovered), or -1 if no puzzle lines seen. */
+	private int puzzlesUnknown = -1;
+	private List<String> puzzleLines = List.of();
 	private boolean inBoss;
 	private byte[] lastSent;
 	private boolean mapItemSeen;
@@ -120,6 +123,8 @@ public final class DungeonWatcher {
 			floor = null;
 			floorSource = "none";
 			puzzles = 0;
+			puzzlesUnknown = -1;
+			puzzleLines = List.of();
 			inBoss = false;
 			lastSent = null;
 			mapItemSeen = false;
@@ -151,6 +156,7 @@ public final class DungeonWatcher {
 			if (floor != null) {
 				int p = readPuzzles(mc.getConnection());
 				if (p > 0) puzzles = p;
+				readPuzzleLines(mc.getConnection());
 				party = readParty(mc.getConnection());
 				if (!inBoss) {
 					com.github.roompredictor.core.Prediction lp = service.latest();
@@ -180,7 +186,7 @@ public final class DungeonWatcher {
 				else colors = lastSent = data.colors.clone();
 			}
 		}
-		service.submit(new PredictorService.Observation(runId, System.currentTimeMillis(), floor, colors, puzzles, names,
+		service.submit(new PredictorService.Observation(runId, System.currentTimeMillis(), floor, colors, puzzles, puzzlesUnknown, names,
 			spawnX, spawnZ, spawnDir));
 	}
 
@@ -244,6 +250,7 @@ public final class DungeonWatcher {
 		out.add("floor: " + floor + " (from " + floorSource + "), chat floor: " + chatFloor
 			+ (chatFloor == null ? "" : chatFloorUsed ? " (used)" : " (waiting)"));
 		out.add("spawn cell: " + (spawnDir < 0 ? "not captured" : (spawnX + 1) + "," + (spawnZ + 1) + " facing " + "NESW".charAt(spawnDir)));
+		out.add("tab puzzles: " + puzzleLines + (puzzlesUnknown >= 0 ? " (" + puzzlesUnknown + " undiscovered)" : ""));
 		out.add("in boss: " + inBoss + ", puzzles: " + puzzles + ", map item in slot 9: " + mapItemSeen + ", run #" + runId);
 		out.add("party (alive): " + party + ", map markers: " + teammates.size());
 		String[] n = names;
@@ -292,6 +299,37 @@ public final class DungeonWatcher {
 			if (!line.isEmpty() && !out.contains(line)) out.add(line);
 		}
 		return out;
+	}
+
+	/** Puzzle lines under "Puzzles: (N)", e.g. " Ice Fill: [x]" or " ???: [x]" for undiscovered ones. */
+	private static final Pattern PUZZLE_LINE = Pattern.compile("^([\\w ?']+): \\[");
+
+	private void readPuzzleLines(ClientPacketListener conn) {
+		if (conn == null) return;
+		List<String> lines = new ArrayList<>();
+		int unknown = 0;
+		boolean inPuzzles = false;
+		for (PlayerInfo info : conn.getListedOnlinePlayers()) {
+			Component name = info.getTabListDisplayName();
+			if (name == null) continue;
+			String l = clean(name.getString());
+			if (PUZZLES.matcher(l).find()) {
+				inPuzzles = true;
+				continue;
+			}
+			if (!inPuzzles) continue;
+			Matcher m = PUZZLE_LINE.matcher(l);
+			if (!m.find()) {
+				if (!lines.isEmpty()) break; // past the puzzle section
+				continue;
+			}
+			lines.add(l);
+			if (m.group(1).trim().equals("???")) unknown++;
+		}
+		if (!lines.isEmpty()) {
+			puzzleLines = lines;
+			puzzlesUnknown = unknown;
+		}
 	}
 
 	private static int readPuzzles(ClientPacketListener conn) {

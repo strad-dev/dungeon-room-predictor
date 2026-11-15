@@ -63,15 +63,15 @@ class PredictorTest {
 		PredictorService s = new PredictorService(new Storage(dir), m -> {});
 		MapGrid full = TestMaps.fullM7();
 		int[] reveal = TestMaps.revealOrder(full);
-		s.submit(new PredictorService.Observation(7, 1000, Floor.M7, null, 5, null, 3, 5, 0));
+		s.submit(new PredictorService.Observation(7, 1000, Floor.M7, null, 5, -1, null, 3, 5, 0));
 		barrier(s);
 		Prediction pre = s.latest();
 		assertEquals(Tile.ENTRANCE, pre.grid.tile(pre.grid.idx(3, 5)));
 		assertEquals(Tile.UNKNOWN, pre.grid.tile(pre.grid.idx(3, 4)));
 		// Then the map item shows up; the Entrance must count as revealed at that moment.
-		s.submit(new PredictorService.Observation(7, 3000, Floor.M7, TestMaps.paint(Replay.at(full, reveal, 0)), 5, null, 3, 5, 0));
+		s.submit(new PredictorService.Observation(7, 3000, Floor.M7, TestMaps.paint(Replay.at(full, reveal, 0)), 5, -1, null, 3, 5, 0));
 		barrier(s);
-		s.submit(new PredictorService.Observation(7, 90_000, Floor.M7, TestMaps.paint(full), 5, null, 3, 5, 0));
+		s.submit(new PredictorService.Observation(7, 90_000, Floor.M7, TestMaps.paint(full), 5, -1, null, 3, 5, 0));
 		barrier(s);
 		s.endRun();
 		barrier(s);
@@ -259,7 +259,7 @@ class PredictorTest {
 		MapGrid full = TestMaps.fullM7();
 		int[] reveal = TestMaps.revealOrder(full);
 		for (int step : Replay.steps(reveal)) {
-			s.submit(new PredictorService.Observation(1, 1000 + step * 1000L, Floor.M7, TestMaps.paint(Replay.at(full, reveal, step)), 5, null, 3, 5, 0));
+			s.submit(new PredictorService.Observation(1, 1000 + step * 1000L, Floor.M7, TestMaps.paint(Replay.at(full, reveal, step)), 5, -1, null, 3, 5, 0));
 			barrier(s);
 		}
 		s.endRun();
@@ -358,10 +358,10 @@ class PredictorTest {
 		long t0 = 1_000_000;
 		for (int step : Replay.steps(reveal)) {
 			MapGrid at = Replay.at(full, reveal, step);
-			s.submit(new PredictorService.Observation(1, t0 + step * 1000L, Floor.M7, TestMaps.paint(at), 5, null, -1, -1, -1));
+			s.submit(new PredictorService.Observation(1, t0 + step * 1000L, Floor.M7, TestMaps.paint(at), 5, -1, null, -1, -1, -1));
 			barrier(s);
 			// A later observation of the same map lets the delayed labels be learned.
-			s.submit(new PredictorService.Observation(1, t0 + step * 1000L + 5000, Floor.M7, TestMaps.paint(at), 5, null, -1, -1, -1));
+			s.submit(new PredictorService.Observation(1, t0 + step * 1000L + 5000, Floor.M7, TestMaps.paint(at), 5, -1, null, -1, -1, -1));
 			barrier(s);
 		}
 		assertNotNull(s.latest());

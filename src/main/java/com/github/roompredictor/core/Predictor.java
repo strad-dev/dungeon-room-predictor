@@ -28,6 +28,13 @@ public final class Predictor {
 	 * @param puzzlesFromTab total puzzle count from the tab list, or 0 if unknown
 	 */
 	public static Prediction predict(MapGrid g, Model model, int puzzlesFromTab) {
+		return predict(g, model, puzzlesFromTab, -1);
+	}
+
+	/**
+	 * @param puzzlesUnknown puzzles the tab list still shows as "???" (undiscovered), or -1
+	 */
+	public static Prediction predict(MapGrid g, Model model, int puzzlesFromTab, int puzzlesUnknown) {
 		long start = System.nanoTime();
 		Floor floor = g.floor;
 		int n = g.size();
@@ -43,6 +50,8 @@ public final class Predictor {
 		target[Label.FAIRY.ordinal()] = g.count(Tile.FAIRY) > 0 ? 0 : 1;
 		target[Label.TRAP.ordinal()] = floor.hasTrap() && g.count(Tile.TRAP) == 0 ? 1 : 0;
 		target[Label.PUZZLE.ordinal()] = Math.max(0, puzzleTarget - g.countRooms(Tile.PUZZLE));
+		// The tab list's "???" count is the server's own number of puzzles still undiscovered.
+		if (puzzlesUnknown >= 0) target[Label.PUZZLE.ordinal()] = Math.min(target[Label.PUZZLE.ordinal()], puzzlesUnknown);
 		boolean[] hard = new boolean[Label.COUNT];
 		hard[Label.BLOOD.ordinal()] = hard[Label.YELLOW.ordinal()] = hard[Label.FAIRY.ordinal()] = true;
 		hard[Label.TRAP.ordinal()] = hard[Label.PUZZLE.ordinal()] = true;
@@ -59,6 +68,7 @@ public final class Predictor {
 		int[] roomEntr = g.roomBetween(entrance);
 		int[] roomFairy = fairyCell >= 0 ? g.roomBetween(fairyCell) : null;
 		Path path = path(g);
+		int soleUnknown = soleUnknownWithBlanks(g);
 
 		boolean[][] masks = new boolean[n][];
 		int[] walled = new int[n];
@@ -68,6 +78,8 @@ public final class Predictor {
 			doors[i] = g.doorCount(i);
 			walled[i] = walls(g, i);
 			masks[i] = mask(g, i, floor, target, rareAllowed, doors[i], bloodFound);
+			applyTreeRules(masks[i], g, i, path);
+			if (i == soleUnknown) for (Label l : Label.ALL) masks[i][l.ordinal()] = l == Label.NORMAL;
 		}
 
 		double[][] p = new double[n][];
@@ -86,7 +98,7 @@ public final class Predictor {
 			p = next;
 		}
 
-		double[][] shapes = shapes(g, model, cand, p);
+		double[][] shapes = shapes(g, model, cand, p, soleUnknown);
 		int[][] footprints = new int[n][];
 		for (int i = 0; i < n; i++) {
 			if (g.tile(i) != Tile.UNKNOWN || shapes[i] == null || p[i] == null) continue;
@@ -204,10 +216,70 @@ public final class Predictor {
 	 * @param fairyCandidate cells behind a normal door of the path's last room while Fairy is
 	 *                       unknown (the path must continue into Fairy through one of them)
 	 */
-	record Path(int frontier, boolean[] fairyCandidate, int lastRoom) {
+	record Path(int frontier, boolean[] fairyCandidate, int lastRoom, boolean[] region) {
 		Path(int frontier, boolean[] fairyCandidate) {
-			this(frontier, fairyCandidate, -1);
+			this(frontier, fairyCandidate, -1, null);
 		}
+
+		Path(int frontier, boolean[] fairyCandidate, int lastRoom) {
+			this(frontier, fairyCandidate, lastRoom, null);
+		}
+
+		boolean anyFairyCandidate() {
+			for (boolean b : fairyCandidate) if (b) return true;
+			return false;
+		}
+	}
+
+	/**
+	 * Dungeon layouts have no loops: every unopened room hangs off the opened part through its own
+	 * door, and everything beyond it can only be reached through it. So the rest of the Blood-rush
+	 * path lies beyond the room(s) the path continues into: those cells plus the blank cells
+	 * reachable from them without passing an opened room or another "?" (each other "?" is the
+	 * root of a different branch). Returns null when the path's continuation isn't known.
+	 */
+	static boolean[] pathRegion(MapGrid g, int frontier, boolean[] fairyCand) {
+		int n = g.size();
+		boolean[] start = new boolean[n];
+		boolean any = false;
+		if (frontier >= 0) {
+			start[frontier] = true;
+			any = true;
+		} else {
+			for (int i = 0; i < n; i++) if (fairyCand[i]) start[i] = any = true;
+		}
+		if (!any) return null;
+		boolean[] region = new boolean[n];
+		java.util.ArrayDeque<Integer> q = new java.util.ArrayDeque<>();
+		for (int i = 0; i < n; i++) {
+			if (start[i]) {
+				region[i] = true;
+				q.add(i);
+			}
+		}
+		while (!q.isEmpty()) {
+			int c = q.poll();
+			for (int d = 0; d < 4; d++) {
+				int nb = g.neighbor(c, d);
+				if (nb < 0 || region[nb] || g.floor.isExtraColumn(g.x(nb))) continue;
+				if (g.tile(nb) != Tile.EMPTY) continue; // opened rooms, and other "?" branches
+				region[nb] = true;
+				q.add(nb);
+			}
+		}
+		return region;
+	}
+
+	/** Hard rules from the path and the no-loops tree structure. */
+	static void applyTreeRules(boolean[] m, MapGrid g, int i, Path path) {
+		if (path.region() != null && !path.region()[i]) {
+			m[Label.BLOOD.ordinal()] = false;
+			m[Label.FAIRY.ordinal()] = false;
+		}
+		// Through a normal door into Fairy: Fairy is one of those cells.
+		if (path.anyFairyCandidate() && !path.fairyCandidate()[i]) m[Label.FAIRY.ordinal()] = false;
+		// The path's next room behind a wither door isn't Fairy (Fairy's door in is a normal door).
+		if (i == path.frontier()) m[Label.FAIRY.ordinal()] = false;
 	}
 
 	private static int anyCell(MapGrid g, int comp) {
@@ -246,10 +318,10 @@ public final class Predictor {
 			}
 			if (outs.size() != 1) {
 				if (outs.isEmpty() && !fairyFound) for (int c : normalOut) fairyCand[c] = true;
-				return new Path(-1, fairyCand, anyCell(g, cur));
+				return new Path(-1, fairyCand, anyCell(g, cur), pathRegion(g, -1, fairyCand));
 			}
 			int next = outs.getFirst();
-			if (!g.tile(next).explored()) return new Path(next, fairyCand, anyCell(g, cur));
+			if (!g.tile(next).explored()) return new Path(next, fairyCand, anyCell(g, cur), pathRegion(g, next, fairyCand));
 			cur = g.component(next);
 			visited.add(cur);
 			first = false;
@@ -276,6 +348,8 @@ public final class Predictor {
 		boolean[] pass = new boolean[n];
 		for (int i = 0; i < n; i++) pass[i] = p[i] != null && !g.floor.isExtraColumn(g.x(i));
 		pass[start] = true;
+		// The rest of the path can't leave the branch it continues into (no loops).
+		if (path.region() != null) for (int i = 0; i < n; i++) if (!path.region()[i] && i != start) pass[i] = false;
 		if (fairyCell >= 0) pass[fairyCell] = true;
 		int[] fromStart = bfsParents(g, start, pass);
 		int[] distStart = bfsDist(g, start, fromStart);
@@ -477,7 +551,44 @@ public final class Predictor {
 		}
 	}
 
-	static double[][] shapes(MapGrid g, Model model, boolean[] cand, double[][] p) {
+	/**
+	 * If the map is finished except for one unopened room (a single "?" and 1-3 blank normal-grid
+	 * cells reachable from it), the blank cells belong to that room, so it's never a 1x1 (nor any
+	 * special room, which are all 1x1). Returns that "?" cell, or -1.
+	 */
+	public static int soleUnknownWithBlanks(MapGrid g) {
+		int unknown = -1, unknowns = 0, blanks = 0;
+		for (int i = 0; i < g.size(); i++) {
+			if (g.floor.isExtraColumn(g.x(i))) continue;
+			if (g.tile(i) == Tile.UNKNOWN) {
+				unknowns++;
+				unknown = i;
+			} else if (g.tile(i) == Tile.EMPTY) {
+				blanks++;
+			}
+		}
+		// Only when the map is otherwise finished: the blank cells are few enough to be part of one
+		// room with the "?" (rooms are at most 4 tiles) and all reachable from it.
+		if (unknowns != 1 || blanks == 0 || blanks > 3) return -1;
+		boolean[] seen = new boolean[g.size()];
+		java.util.ArrayDeque<Integer> q = new java.util.ArrayDeque<>();
+		seen[unknown] = true;
+		q.add(unknown);
+		int reached = 0;
+		while (!q.isEmpty()) {
+			int c = q.poll();
+			for (int d = 0; d < 4; d++) {
+				int nb = g.neighbor(c, d);
+				if (nb < 0 || seen[nb] || g.tile(nb) != Tile.EMPTY || g.floor.isExtraColumn(g.x(nb))) continue;
+				seen[nb] = true;
+				reached++;
+				q.add(nb);
+			}
+		}
+		return reached == blanks ? unknown : -1;
+	}
+
+	static double[][] shapes(MapGrid g, Model model, boolean[] cand, double[][] p, int soleUnknown) {
 		int n = g.size();
 		int bracket = g.floor.bracket();
 		double[] expected = model.expectedShapes(bracket);
@@ -515,11 +626,24 @@ public final class Predictor {
 			for (Shape s : Shape.ALL) {
 				int k = s.ordinal();
 				if (weight[k] == 0) continue;
+				if (i == soleUnknown && s == Shape.S1x1) continue;
 				int fits = placements(g, i, s, cand);
 				if (fits == 0) continue;
 				// More ways to fit = a bit more likely, with diminishing returns.
 				w[k] = weight[k] * (1 + Math.log(fits)) / s.size();
 				sum += w[k];
+			}
+			if (sum <= 0 && i == soleUnknown) {
+				// The count limits ruled everything out (the map contradicts them), but this room
+				// can't be a 1x1: fall back to whichever big shapes physically fit.
+				for (Shape sh : Shape.ALL) {
+					if (sh == Shape.S1x1) continue;
+					int fits = placements(g, i, sh, cand);
+					if (fits > 0) {
+						w[sh.ordinal()] = Math.max(0.05, expected[sh.ordinal()]) * (1 + Math.log(fits)) / sh.size();
+						sum += w[sh.ordinal()];
+					}
+				}
 			}
 			if (sum <= 0) {
 				w[Shape.S1x1.ordinal()] = 1;
