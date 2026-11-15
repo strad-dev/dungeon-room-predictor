@@ -373,7 +373,7 @@ class PredictorTest {
 		assertEquals(1, s.runs().size());
 		RunRecord r = s.runs().getFirst();
 		assertEquals("M7", r.floor);
-		assertTrue(r.grid().sameAs(full));
+		assertTrue(r.grid().sameAs(full.markRushPath()), "stored with the Blood-rush path as wither doors");
 		assertEquals(full.find(Tile.BLOOD), r.bloodActual);
 
 		// A new service instance reads both back, with the learned updates.

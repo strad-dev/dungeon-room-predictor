@@ -101,30 +101,56 @@ public final class MapPainter {
 
 		if (p == null || p.grid != g) return;
 
-		// Predicted room shapes: each "?" guessed to be a normal room is drawn as a solid grey room
-		// of its most likely shape, outlined in the prediction colour so it reads as a guess.
-		boolean[] underGhost = new boolean[g.size()];
-		int ghost = st.unknown | 0xFF000000;
-		int edge = labelColor(st, Label.NORMAL);
-		for (int i = 0; i < g.size(); i++) {
-			int[] fp = p.footprints[i];
-			if (fp == null || fp.length < 2) continue;
-			for (int j : fp) {
-				if (j != i) underGhost[j] = true;
-				float gx = ox + g.x(j) * cell + inset, gz = oz + g.z(j) * cell + inset;
-				boolean east = contains(fp, g.neighbor(j, 1)), south = contains(fp, g.neighbor(j, 2));
-				boolean west = contains(fp, g.neighbor(j, 3)), north = contains(fp, g.neighbor(j, 0));
-				rect(ctx, gx, gz, tile, tile, ghost);
-				if (east) rect(ctx, gx + tile, gz, cell - tile, tile, ghost);
-				if (south) rect(ctx, gx, gz + tile, tile, cell - tile, ghost);
-				int es = east ? g.neighbor(g.neighbor(j, 1), 2) : -1;
-				if (east && south && contains(fp, es)) rect(ctx, gx + tile, gz + tile, cell - tile, cell - tile, ghost);
-				// Outline the outer edges of the footprint.
-				float w = east ? cell : tile, h = south ? cell : tile;
-				if (!north) rect(ctx, gx, gz, w, 1, edge);
-				if (!south) rect(ctx, gx, gz + tile - 1, w, 1, edge);
-				if (!west) rect(ctx, gx, gz, 1, h, edge);
-				if (!east) rect(ctx, gx + tile - 1, gz, 1, h, edge);
+		// The predicted completion of the map: each predicted room drawn as an outline in the colour
+		// of its type ("?" tiles keep their own grey), with one label on its top-left tile: its
+		// category and chance ("L 46%", "End 98%", "Blood 40%", "1x1 30%" = a normal 1x1), plus the
+		// runner-up if it's at least 10%.
+		boolean[] covered = new boolean[g.size()];
+		if (opt.showBlank() && p.roomOf != null) {
+			for (int i = 0; i < g.size(); i++) {
+				int r = p.roomOf[i];
+				if (r < 0 || g.tile(i).explored()) continue;
+				covered[i] = true;
+				float gx = ox + g.x(i) * cell + inset, gz = oz + g.z(i) * cell + inset;
+				boolean east = sameRoom(p, g, i, 1), south = sameRoom(p, g, i, 2);
+				boolean west = sameRoom(p, g, i, 3), north = sameRoom(p, g, i, 0);
+				int edge = labelColor(st, groupColor(p.roomLabel[r]));
+				// Outer edges of the room, running through the gaps between its own tiles.
+				float x0 = west ? gx - (cell - tile) : gx, x1 = east ? gx + cell : gx + tile;
+				float z0 = north ? gz - (cell - tile) : gz, z1 = south ? gz + cell : gz + tile;
+				if (!north) rect(ctx, x0, gz, x1 - x0, 1, edge);
+				if (!south) rect(ctx, x0, gz + tile - 1, x1 - x0, 1, edge);
+				if (!west) rect(ctx, gx, z0, 1, z1 - z0, edge);
+				if (!east) rect(ctx, gx + tile - 1, z0, 1, z1 - z0, edge);
+			}
+			boolean[] labelled = new boolean[p.roomLabel.length];
+			for (int i = 0; i < g.size(); i++) {
+				int r = p.roomOf[i];
+				if (r < 0 || g.tile(i).explored() || labelled[r]) continue;
+				labelled[r] = true; // cells run row by row, so this is the room's top-left tile
+				float tx = ox + g.x(i) * cell + inset, tz = oz + g.z(i) * cell + inset;
+				Label l = p.roomLabel[r];
+				// One distribution per room over End / Blood / Fairy / 1x1 / 1x2 / ... (1x1 = a
+				// normal 1x1 only), read where the room's evidence is: its "?" cell, else this cell.
+				int at = i;
+				for (int c = 0; c < g.size(); c++) if (p.roomOf[c] == r && g.tile(c) == Tile.UNKNOWN) at = c;
+				java.util.Map<String, Double> cat = categories(p, at);
+				String own = switch (l) {
+					case BLOOD -> "Blood";
+					case FAIRY -> "Fairy";
+					case NORMAL -> p.roomShape[r].display;
+					default -> "End";
+				};
+				String second = null;
+				double secondP = 0;
+				for (var e : cat.entrySet()) {
+					if (e.getKey().equals(own) || e.getValue() <= secondP) continue;
+					second = e.getKey();
+					secondP = e.getValue();
+				}
+				String l2 = second != null && secondP >= 0.1 ? second + " " + Math.round(secondP * 100) + "%" : null;
+				text(ctx, font, tx, tz, tile, own + " " + Math.round(cat.getOrDefault(own, 0.0) * 100) + "%", l2,
+					labelColor(st, groupColor(l)), st.textScale);
 			}
 		}
 
@@ -159,32 +185,79 @@ public final class MapPainter {
 			}
 			if (i == p.bloodCell && g.tile(i) != Tile.BLOOD) outline(ctx, tx, tz, tile, 0xFFFF3030);
 
-			Label best = p.best(i);
-			if (best == null) continue;
-			double conf = probs[best.ordinal()];
+			// Shown in four groups: Room (normal, with its likely shape), 1x1 (Puzzle, Trap, Yellow
+			// and Rare together), Blood and Fairy. The model still keeps the types apart.
+			Group[] groups = groups(probs);
+			Group best = groups[0];
+			double conf = best.p();
 			boolean known = t == Tile.UNKNOWN;
-			if (!known && (underGhost[i] || !opt.showBlank() || conf < opt.blankMinConfidence() || best == Label.EMPTY)) continue;
+			if (!known || covered[i]) continue; // shown by the predicted completion above
 
-			String l1 = best.abbrev + " " + Math.round(conf * 100) + "%";
+			String l1 = best.name() + " " + Math.round(conf * 100) + "%";
 			String l2 = null;
-			if (best == Label.NORMAL && p.shapes[i] != null) {
+			if (best.name().equals("Room") && p.shapes[i] != null) {
 				Shape s = p.bestShape(i);
 				l2 = s.display + " " + Math.round(p.shapes[i][s.ordinal()] * 100) + "%";
-			} else if (best != Label.NORMAL) {
+			} else if (groups.length > 1 && groups[1].p() >= 0.1) {
 				// Runner-up, so the player sees how close the call is.
-				Label second = null;
-				for (Label l : Label.ALL) {
-					if (l == best || probs[l.ordinal()] <= 0) continue;
-					if (second == null || probs[l.ordinal()] > probs[second.ordinal()]) second = l;
-				}
-				if (second != null && probs[second.ordinal()] >= 0.1) {
-					l2 = second.abbrev + " " + Math.round(probs[second.ordinal()] * 100) + "%";
-				}
+				l2 = groups[1].name() + " " + Math.round(groups[1].p() * 100) + "%";
 			}
-			int color = labelColor(st, best);
+			int color = labelColor(st, best.color());
 			if (!known) color = (color & 0x00FFFFFF) | 0xDD000000;
 			text(ctx, font, tx, tz, tile, l1, l2, color, st.textScale);
 		}
+	}
+
+	/**
+	 * What the room at a cell could be: End (Puzzle/Trap/Yellow/Rare), Blood, Fairy, or a normal
+	 * room of each shape (P(normal) x the shape's odds). Sums to 1.
+	 */
+	private static java.util.Map<String, Double> categories(Prediction p, int at) {
+		java.util.Map<String, Double> m = new java.util.LinkedHashMap<>();
+		double[] l = p.labels[at];
+		if (l == null) return m;
+		m.put("End", l[Label.PUZZLE.ordinal()] + l[Label.TRAP.ordinal()] + l[Label.YELLOW.ordinal()] + l[Label.RARE.ordinal()]);
+		m.put("Blood", l[Label.BLOOD.ordinal()]);
+		m.put("Fairy", l[Label.FAIRY.ordinal()]);
+		double normal = l[Label.NORMAL.ordinal()];
+		double[] sh = p.shapes[at];
+		for (Shape s : Shape.ALL) {
+			double v = normal * (sh == null ? (s == Shape.S1x1 ? 1 : 0) : sh[s.ordinal()]);
+			if (v > 0) m.put(s.display, v);
+		}
+		return m;
+	}
+
+	private static boolean sameRoom(Prediction p, MapGrid g, int i, int dir) {
+		int nb = g.neighbor(i, dir);
+		return nb >= 0 && p.roomOf[nb] >= 0 && p.roomOf[nb] == p.roomOf[i] && !g.tile(nb).explored();
+	}
+
+	/** Puzzle, Trap, Yellow and Rare share the "End" (one-door 1x1) look. */
+	private static Label groupColor(Label l) {
+		return switch (l) {
+			case PUZZLE, TRAP, YELLOW, RARE -> Label.PUZZLE;
+			default -> l;
+		};
+	}
+
+		/** A display group of labels: name, combined probability, and the label whose colour it uses. */
+	private record Group(String name, double p, Label color) {
+	}
+
+	/** Groups sorted by probability, highest first (empty groups dropped). */
+	private static Group[] groups(double[] probs) {
+		double end = probs[Label.PUZZLE.ordinal()] + probs[Label.TRAP.ordinal()]
+			+ probs[Label.YELLOW.ordinal()] + probs[Label.RARE.ordinal()];
+		java.util.List<Group> g = new java.util.ArrayList<>(java.util.List.of(
+			new Group("Room", probs[Label.NORMAL.ordinal()], Label.NORMAL),
+			new Group("End", end, Label.PUZZLE),
+			new Group("Blood", probs[Label.BLOOD.ordinal()], Label.BLOOD),
+			new Group("Fairy", probs[Label.FAIRY.ordinal()], Label.FAIRY),
+			new Group("-", probs[Label.EMPTY.ordinal()], Label.EMPTY)));
+		g.removeIf(x -> x.p() <= 0);
+		g.sort((a, b) -> Double.compare(b.p(), a.p()));
+		return g.toArray(new Group[0]);
 	}
 
 	/** A player to draw: position in grid-cell units (cell centre = i + 0.5), or a skin for a head. */

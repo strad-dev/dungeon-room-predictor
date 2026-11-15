@@ -37,7 +37,7 @@ public final class DungeonWatcher {
 	private static final Pattern PUZZLES = Pattern.compile("Puzzles: \\((\\d+)\\)");
 	private static final Pattern BOSS = Pattern.compile("^\\[BOSS] ([^:]+):");
 	private static final int MAP_SLOT = 8;
-	private static final int SUBMIT_EVERY = 4;
+	private static final int SUBMIT_EVERY = 2;
 	private static final int SCAN_EVERY = 20;
 	/** How long a floor announced in chat stays valid while waiting for the dungeon server. */
 	private static final long CHAT_FLOOR_TTL_MS = 90_000;
@@ -140,7 +140,8 @@ public final class DungeonWatcher {
 		ticks++;
 		if (spawnDir < 0) captureSpawn(mc);
 
-		if (ticks % SCAN_EVERY == 0) {
+		// Until the floor is known, check every tick so the map shows up right away.
+		if (floor == null || ticks % SCAN_EVERY == 0) {
 			Scoreboard sb = level.getScoreboard();
 			lastSidebar = sidebarLines(sb);
 			Floor f = match(lastSidebar);

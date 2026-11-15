@@ -4,7 +4,7 @@
 	"version": "${version}",
 	"name": "Strad Clear Rooms Predictor",
 	"description": "Predicts the type and size of unopened Hypixel dungeon rooms (and where Blood is) using only what the dungeon map item shows. Learns from your runs.",
-	"authors": ["Stradivarius"],
+	"authors": ["Stradivarius Violin"],
 	"license": "MIT",
 	"environment": "client",
 	"entrypoints": {

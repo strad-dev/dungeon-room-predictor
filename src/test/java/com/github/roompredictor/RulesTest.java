@@ -130,4 +130,73 @@ class RulesTest {
 		assertEquals(5, withoutTab, 0.1);
 		assertEquals(2, withTab, 0.1, "tab says only 2 puzzles are still undiscovered");
 	}
+
+	@Test
+	void completionFillsTheMapWithinTheRules() {
+		MapGrid g = MapGrid.spawnGrid(Floor.M7, 3, 5, 0);
+		Prediction p = Predictor.predict(g, Model.seeded(), 5);
+		int[] specials = new int[Label.COUNT];
+		int bigRooms = 0, bigTiles = 0;
+		int[] perShape = new int[Shape.COUNT];
+		for (int i = 0; i < g.size(); i++) {
+			if (g.tile(i).explored()) {
+				assertEquals(-1, p.roomOf[i]);
+				continue;
+			}
+			assertTrue(p.roomOf[i] >= 0, "every unopened cell is part of a predicted room");
+		}
+		for (int r = 0; r < p.roomLabel.length; r++) {
+			if (p.roomLabel[r] != Label.NORMAL) specials[p.roomLabel[r].ordinal()]++;
+			perShape[p.roomShape[r].ordinal()]++;
+			if (p.roomShape[r] != Shape.S1x1) {
+				bigRooms++;
+				bigTiles += p.roomShape[r].size();
+			}
+			int size = 0;
+			for (int c : p.roomOf) if (c == r) size++;
+			assertEquals(p.roomShape[r].size(), size, "room " + r + " covers its shape");
+		}
+		assertTrue(specials[Label.BLOOD.ordinal()] <= 1 && specials[Label.FAIRY.ordinal()] <= 1);
+		assertTrue(specials[Label.PUZZLE.ordinal()] <= 5);
+		assertTrue(bigRooms <= Model.F7_BIG_ROOMS, "big rooms " + bigRooms);
+		assertTrue(bigTiles <= Model.F7_BIG_TILES_MAX, "big tiles " + bigTiles);
+		for (Shape sh : Shape.ALL) if (sh != Shape.S1x1) assertTrue(perShape[sh.ordinal()] <= 2, sh + " x" + perShape[sh.ordinal()]);
+		assertTrue(bigRooms >= 3, "it actually predicts big rooms: " + bigRooms);
+	}
+
+	@Test
+	void openingBloodRedrawsThePathAsWitherDoors() {
+		// The fixture's path: Entrance (3,5) -> Red Blue (3,4) -> Fairy (3,3) -> Deathmite (3,2) -> Blood (3,1).
+		// Pretend the map only shows normal doors everywhere (opened before the mod saw them).
+		MapGrid full = TestMaps.fullM7();
+		MapGrid.Builder b = new MapGrid.Builder(Floor.M7);
+		for (int i = 0; i < full.size(); i++) {
+			int x = full.x(i), z = full.z(i);
+			b.tile(x, z, full.tile(i));
+			Link e = full.link(i, 1), s = full.link(i, 2);
+			b.east(x, z, e.isDoor() ? Link.DOOR : e);
+			b.south(x, z, s.isDoor() ? Link.DOOR : s);
+		}
+		MapGrid g = b.build().markRushPath();
+		assertEquals(Link.WITHER_DOOR, g.link(g.idx(3, 5), 0), "Entrance -> Red Blue");
+		assertEquals(Link.DOOR, g.link(g.idx(3, 4), 0), "the door into Fairy stays normal");
+		assertEquals(Link.WITHER_DOOR, g.link(g.idx(3, 3), 0), "Fairy -> Deathmite");
+		assertEquals(Link.BLOOD_DOOR, g.link(g.idx(3, 2), 0), "the door into Blood");
+		assertEquals(Link.DOOR, g.link(g.idx(0, 0), 2), "doors off the path are untouched");
+	}
+
+	@Test
+	void boxedInUnknownRoomIsCertainlyOneByOne() {
+		// "?" at (1,5): opened rooms left, right and above, map edge below.
+		MapGrid g = new MapGrid.Builder(Floor.M7)
+			.tile(0, 5, Tile.PUZZLE).tile(2, 5, Tile.NORMAL).tile(3, 5, Tile.ENTRANCE).tile(1, 4, Tile.NORMAL)
+			.east(2, 5, Link.DOOR).south(1, 4, Link.DOOR)
+			.tile(1, 5, Tile.UNKNOWN).east(1, 5, Link.DOOR)
+			.build();
+		Prediction p = Predictor.predict(g, Model.seeded(), 5);
+		int q = g.idx(1, 5);
+		int r = p.roomOf[q];
+		assertEquals(Shape.S1x1, p.roomShape[r]);
+		assertEquals(1.0, p.roomShapeP[r], 1e-9, "no other shape can fit");
+	}
 }

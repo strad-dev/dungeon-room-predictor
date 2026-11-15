@@ -9,6 +9,15 @@ public final class Prediction {
 	public final double[][] shapes;
 	/** Per "?" cell guessed to be a normal room: the cells of its most likely footprint, or null. */
 	public final int[][] footprints;
+	/**
+	 * The most likely completion of the map: every unopened cell assigned to a predicted room.
+	 * {@code roomOf[cell]} is an index into the room arrays, or -1 (opened, or predicted empty).
+	 */
+	public final int[] roomOf;
+	public final Label[] roomLabel;
+	public final Shape[] roomShape;
+	public final double[] roomTypeP;
+	public final double[] roomShapeP;
 	/** Predicted wither doors: {east, south} probability per cell for doors the map doesn't show yet. */
 	public final double[][] witherDoors;
 	/** Features used per candidate cell in the final round (kept for learning). Do not mutate. */
@@ -21,7 +30,7 @@ public final class Prediction {
 	public final long modelUpdates;
 	public final long computeNanos;
 
-	Prediction(MapGrid grid, double[][] labels, double[][] shapes, int[][] footprints, double[][] witherDoors, Features[] features, boolean[][] masks,
+	Prediction(MapGrid grid, double[][] labels, double[][] shapes, int[][] footprints, Predictor.Completion completion, double[][] witherDoors, Features[] features, boolean[][] masks,
 			   int bloodCell, double bloodProbability, int puzzleTarget, boolean puzzlesFromTab,
 			   long modelUpdates, long computeNanos) {
 		this.grid = grid;
@@ -29,6 +38,11 @@ public final class Prediction {
 		this.shapes = shapes;
 		this.footprints = footprints;
 		this.witherDoors = witherDoors;
+		this.roomOf = completion.roomOf();
+		this.roomLabel = completion.label();
+		this.roomShape = completion.shape();
+		this.roomTypeP = completion.typeP();
+		this.roomShapeP = completion.shapeP();
 		this.features = features;
 		this.masks = masks;
 		this.bloodCell = bloodCell;

@@ -137,6 +137,50 @@ public final class MapGrid {
 		return changed ? new MapGrid(floor, tiles, e, s, checks) : this;
 	}
 
+	/**
+	 * Once Blood is opened the whole Blood-rush path is known (there are no loops, so the route
+	 * from the Entrance is unique). Every door on it becomes a wither door, except the normal door
+	 * into Fairy and the blood door into Blood. Returns this grid unchanged if Blood isn't open.
+	 */
+	public MapGrid markRushPath() {
+		int blood = find(Tile.BLOOD);
+		if (entrance < 0 || blood < 0) return this;
+		int n = size();
+		int[] parent = new int[n];
+		Arrays.fill(parent, -2);
+		parent[entrance] = -1;
+		ArrayDeque<Integer> q = new ArrayDeque<>();
+		q.add(entrance);
+		while (!q.isEmpty()) {
+			int c = q.poll();
+			for (int d = 0; d < 4; d++) {
+				int nb = neighbor(c, d);
+				if (nb < 0 || parent[nb] != -2 || !link(c, d).walkable()) continue;
+				parent[nb] = c;
+				q.add(nb);
+			}
+		}
+		if (parent[blood] == -2) return this;
+		Link[] e = east.clone(), s = south.clone();
+		boolean changed = false;
+		for (int c = blood; parent[c] >= 0; c = parent[c]) {
+			int a = parent[c];
+			Link want = tiles[c] == Tile.BLOOD ? Link.BLOOD_DOOR : tiles[c] == Tile.FAIRY ? Link.DOOR : Link.WITHER_DOOR;
+			int dir = -1;
+			for (int d = 0; d < 4; d++) if (neighbor(a, d) == c) dir = d;
+			Link cur = link(a, dir);
+			if (cur == Link.MERGED || cur == want) continue;
+			switch (dir) {
+				case 0 -> s[c] = want;
+				case 1 -> e[a] = want;
+				case 2 -> s[a] = want;
+				default -> e[c] = want;
+			}
+			changed = true;
+		}
+		return changed ? new MapGrid(floor, tiles, e, s, checks) : this;
+	}
+
 	public int size() {
 		return w * h;
 	}

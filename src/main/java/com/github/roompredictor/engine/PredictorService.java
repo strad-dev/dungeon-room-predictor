@@ -460,6 +460,7 @@ public final class PredictorService {
 				MapGrid next = MapDecoder.decode(lastColors, floor, geometry);
 				if (!gridFromMap) grid = null; // the spawn guess isn't something the map revealed
 				next = next.rememberDoors(grid); // opened wither/blood doors stay wither/blood doors
+				next = next.markRushPath();      // once Blood is open, the whole path is wither doors
 				if (!next.sameAs(grid)) onNewGrid(next, o.timeMs());
 				gridFromMap = true;
 				status = "map decoded (room " + geometry.roomSize() + "px at " + geometry.offsetX() + "," + geometry.offsetZ() + ")";

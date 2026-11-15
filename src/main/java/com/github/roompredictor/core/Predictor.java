@@ -126,7 +126,8 @@ public final class Predictor {
 		}
 
 		double[][] wither = witherDoors(g, p, path, walk);
-		return new Prediction(g, p, shapes, footprints, wither, feats, masks, bloodCell, bloodP, puzzleTarget, puzzlesFromTab > 0,
+		Completion completion = complete(g, model, p, shapes, cand, target, rareAllowed);
+		return new Prediction(g, p, shapes, footprints, completion, wither, feats, masks, bloodCell, bloodP, puzzleTarget, puzzlesFromTab > 0,
 			model.updates, System.nanoTime() - start);
 	}
 
@@ -157,6 +158,177 @@ public final class Predictor {
 			}
 		}
 		return best;
+	}
+
+	/** A predicted completion of the map (see {@link Prediction#roomOf}). */
+	/** {@code typeP}: chance the room is its type; {@code shapeP}: chance it has its shape. */
+	public record Completion(int[] roomOf, Label[] label, Shape[] shape, double[] typeP, double[] shapeP) {
+	}
+
+	/**
+	 * Fills every unopened cell with a predicted room. Special rooms (the missing Blood, Fairy,
+	 * Trap, Yellow, Puzzles and likely Rares) go on their most likely cells first, one per cell;
+	 * then the expected big rooms are placed largest first where they fit best (never crossing a
+	 * known door, at most 2 per shape, within the big-room limits); what's left is normal 1x1s.
+	 */
+	static Completion complete(MapGrid g, Model model, double[][] p, double[][] shapeP, boolean[] cand, double[] target, boolean rareAllowed) {
+		int n = g.size();
+		int[] roomOf = new int[n];
+		java.util.Arrays.fill(roomOf, -1);
+		List<Label> labels = new java.util.ArrayList<>();
+		List<Shape> shapes = new java.util.ArrayList<>();
+		List<Double> probs = new java.util.ArrayList<>();
+		List<Double> shapeProbs = new java.util.ArrayList<>();
+		boolean[] free = new boolean[n];
+		for (int i = 0; i < n; i++) free[i] = cand[i] && p[i] != null;
+
+		// Extra puzzle column: a puzzle or nothing.
+		for (int i = 0; i < n; i++) {
+			if (!free[i] || !g.floor.isExtraColumn(g.x(i))) continue;
+			if (p[i][Label.PUZZLE.ordinal()] <= p[i][Label.EMPTY.ordinal()]) free[i] = false;
+		}
+
+		// 1) Special rooms, most confident first.
+		int[] left = new int[Label.COUNT];
+		for (Label l : new Label[]{Label.BLOOD, Label.FAIRY, Label.TRAP, Label.YELLOW, Label.PUZZLE}) {
+			left[l.ordinal()] = (int) Math.round(target[l.ordinal()]);
+		}
+		if (rareAllowed) {
+			double rare = 0;
+			for (int i = 0; i < n; i++) if (free[i]) rare += p[i][Label.RARE.ordinal()];
+			left[Label.RARE.ordinal()] = (int) Math.round(rare);
+		}
+		List<double[]> picks = new java.util.ArrayList<>();
+		for (int i = 0; i < n; i++) {
+			if (!free[i]) continue;
+			for (Label l : new Label[]{Label.BLOOD, Label.FAIRY, Label.TRAP, Label.YELLOW, Label.PUZZLE, Label.RARE}) {
+				if (p[i][l.ordinal()] > 0.02) picks.add(new double[]{p[i][l.ordinal()], i, l.ordinal()});
+			}
+		}
+		picks.sort((a, b) -> Double.compare(b[0], a[0]));
+		for (double[] pk : picks) {
+			int i = (int) pk[1], k = (int) pk[2];
+			if (!free[i] || left[k] <= 0) continue;
+			// Only if it beats this cell being a normal room by enough to be worth committing.
+			if (pk[0] < p[i][Label.NORMAL.ordinal()] * 0.25) continue;
+			free[i] = false;
+			left[k]--;
+			roomOf[i] = labels.size();
+			labels.add(Label.ALL[k]);
+			shapes.add(Shape.S1x1);
+			// Confidence shown for an end room is for the whole "End" group.
+			probs.add(Label.ALL[k].isEndRoom() && k != Label.BLOOD.ordinal() ? endP(p[i]) : pk[0]);
+			shapeProbs.add(shapeChance(p, shapeP, i, Shape.S1x1));
+		}
+		for (int i = 0; i < n; i++) if (g.floor.isExtraColumn(g.x(i))) free[i] = false;
+
+		// 2) Big rooms, largest shapes first.
+		int bracket = g.floor.bracket();
+		double[] expected = model.expectedShapes(bracket);
+		int[] seen = exploredShapeCounts(g);
+		int bigRooms = 0, bigTiles = 0;
+		for (Shape s : Shape.ALL) {
+			if (s == Shape.S1x1) continue;
+			bigRooms += seen[s.ordinal()];
+			bigTiles += seen[s.ordinal()] * s.size();
+		}
+		int roomLimit = model.bigRoomLimit(bracket), tileLimit = model.bigTileLimit(bracket);
+		double tileTarget = model.bigTileTarget(bracket);
+		int[] quota = new int[Shape.COUNT];
+		for (Shape s : Shape.ALL) {
+			if (s == Shape.S1x1) continue;
+			int q = (int) Math.round(Math.max(0, expected[s.ordinal()] - seen[s.ordinal()]));
+			quota[s.ordinal()] = Math.min(q, Shape.MAX_PER_DUNGEON - seen[s.ordinal()]);
+		}
+		// Each step, place the single best-scoring big room of any shape that still has quota.
+		// Score per tile: how likely its cells are normal rooms, plus, on "?" cells, how much that
+		// cell's own shape odds favour this shape (so a "?" that looks like an L becomes one).
+		while (true) {
+			int[] best = null;
+			Shape bestShape = null;
+			double bestScore = Double.NEGATIVE_INFINITY;
+			for (Shape s : Shape.ALL) {
+				if (s == Shape.S1x1 || quota[s.ordinal()] <= 0) continue;
+				if (bigRooms >= roomLimit || bigTiles + s.size() > tileLimit) continue;
+				if (tileTarget > 0 && bigTiles + s.size() > tileTarget + 1) continue;
+				for (int[][] o : s.orientations()) {
+					for (int oz = 0; oz < g.h; oz++) {
+						for (int ox = 0; ox < g.floor.standardWidth; ox++) {
+							if (!fits(g, o, ox, oz, free, List.of())) continue;
+							int[] cells = new int[o.length];
+							double score = 0;
+							for (int k = 0; k < o.length; k++) {
+								int c = g.idx(ox + o[k][0], oz + o[k][1]);
+								cells[k] = c;
+								score += Math.log(Math.max(1e-6, p[c][Label.NORMAL.ordinal()]));
+								if (g.tile(c) == Tile.UNKNOWN && shapeP[c] != null) {
+									score += Math.log(Math.max(1e-3, shapeP[c][s.ordinal()] * Shape.COUNT));
+								}
+							}
+							score /= o.length;
+							if (score > bestScore) {
+								bestScore = score;
+								best = cells;
+								bestShape = s;
+							}
+						}
+					}
+				}
+			}
+			if (best == null) break;
+			for (int c : best) {
+				free[c] = false;
+				roomOf[c] = labels.size();
+			}
+			labels.add(Label.NORMAL);
+			shapes.add(bestShape);
+			int at = anchor(g, best);
+			probs.add(p[at][Label.NORMAL.ordinal()]);
+			shapeProbs.add(shapeChance(p, shapeP, at, bestShape));
+			quota[bestShape.ordinal()]--;
+			bigRooms++;
+			bigTiles += bestShape.size();
+		}
+
+		// 3) The rest: normal 1x1s.
+		for (int i = 0; i < n; i++) {
+			if (!free[i]) continue;
+			roomOf[i] = labels.size();
+			labels.add(Label.NORMAL);
+			shapes.add(Shape.S1x1);
+			probs.add(p[i][Label.NORMAL.ordinal()]);
+			shapeProbs.add(shapeChance(p, shapeP, i, Shape.S1x1));
+		}
+		double[] pa = new double[probs.size()], sa = new double[probs.size()];
+		for (int i = 0; i < pa.length; i++) {
+			pa[i] = probs.get(i);
+			sa[i] = shapeProbs.get(i);
+		}
+		return new Completion(roomOf, labels.toArray(new Label[0]), shapes.toArray(new Shape[0]), pa, sa);
+	}
+
+	/** Puzzle + Trap + Yellow + Rare: the "End" (one-door 1x1) group. */
+	static double endP(double[] p) {
+		return p[Label.PUZZLE.ordinal()] + p[Label.TRAP.ordinal()] + p[Label.YELLOW.ordinal()] + p[Label.RARE.ordinal()];
+	}
+
+	/** Where a predicted room's evidence is: its "?" cell if it has one, otherwise its first cell. */
+	static int anchor(MapGrid g, int[] cells) {
+		int at = cells[0];
+		for (int c : cells) if (g.tile(c) == Tile.UNKNOWN) at = c;
+		return at;
+	}
+
+	/**
+	 * Chance the room at cell {@code at} has shape {@code s}: special rooms (End, Blood, Fairy) are
+	 * always 1x1, plus P(normal) times the normal room's shape odds. A cell boxed in on every side
+	 * can only be a 1x1, so it comes out at 100%.
+	 */
+	static double shapeChance(double[][] p, double[][] shapeP, int at, Shape s) {
+		double[] l = p[at];
+		double shape = shapeP[at] == null ? (s == Shape.S1x1 ? 1 : 0) : shapeP[at][s.ordinal()];
+		double special = endP(l) + l[Label.BLOOD.ordinal()] + l[Label.FAIRY.ordinal()];
+		return Math.min(1, (s == Shape.S1x1 ? special : 0) + l[Label.NORMAL.ordinal()] * shape);
 	}
 
 	/** Sides of a cell that are certainly walls: off-grid, or an explored room with no link. */
