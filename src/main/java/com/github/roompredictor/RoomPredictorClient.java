@@ -41,13 +41,13 @@ import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.argument;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal;
 
 /**
- * Strad Clear Rooms Predictor.
+ * Strad Rooms Predictor.
  *
  * <p>Purely client-side: it reads the dungeon map item, sidebar, tab list and chat that the client
  * already received, and draws an overlay. It registers no packet handlers, mixins or networking.
  */
 public final class RoomPredictorClient implements ClientModInitializer {
-	private static final String PREFIX = "§6[SCRP]§r ";
+	private static final String PREFIX = "§6[SRP]§r ";
 
 	private static Config config;
 	private static PredictorService service;
@@ -262,7 +262,7 @@ public final class RoomPredictorClient implements ClientModInitializer {
 		Minecraft mc = Minecraft.getInstance();
 		if (mc.gui.hud.isHidden()) return; // F1
 		if (config.debug) {
-			String line = "SCRP " + (config.enabled ? "" : "(off) ") + "floor=" + watcher.floor() + " | " + service.status();
+			String line = "SRP " + (config.enabled ? "" : "(off) ") + "floor=" + watcher.floor() + " | " + service.status();
 			ctx.text(mc.font, line, 2, mc.getWindow().getGuiScaledHeight() - 10, 0xFFFFFF55, true);
 		}
 		if (!config.enabled || watcher.floor() == null) return;
@@ -368,7 +368,7 @@ public final class RoomPredictorClient implements ClientModInitializer {
 
 	private static int help(CommandContext<FabricClientCommandSource> c) {
 		String[] lines = {
-			"§6Strad Clear Rooms Predictor§r commands:",
+			"§6Strad Rooms Predictor§r commands:",
 			"§e/srp maps§r - browse every stored map",
 			"§e/srp toggle§r - enable/disable",
 			"§e/srp importdv [position]§r - copy Devonian's map colours/sizes (and HUD position)",

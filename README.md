@@ -1,4 +1,4 @@
-# Strad Clear Rooms Predictor
+# Strad Rooms Predictor
 
 A client-side Fabric mod (Minecraft 26.2, Java) for Hypixel SkyBlock dungeons. It guesses the
 type (and, for normal rooms, the shape) of every unopened room, shows a confidence for each guess,
